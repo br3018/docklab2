@@ -10,3 +10,5 @@ Code for running Docklab 2 at OFL
    - username: labpi
    - password: XXXXXXXXXXXXX
  - Configure wireless LAN for docklab-2 travel router
+ - Install ROS 2 Jazzy Jalisco following ROS 2 documentation here: https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html#id4
+ - 
