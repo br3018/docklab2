@@ -1,4 +1,4 @@
-# docklab-2
+# docklab2
 Code for running Docklab 2 at OFL
 
 ## Setup instructions: 
