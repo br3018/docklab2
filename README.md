@@ -17,6 +17,21 @@ Code for running Docklab 2 at OFL
  - Navigate back to /docklab2_ws and run "colcon build --symlink-install --executor sequential" to build the overlay
  - Close the terminal used to build the overlay before running
  - Source the overlay by running "source install/setup.bash" in a new terminal before running 
+ 
+# LabJack Setup Instructions
+ - Follow instructions for downloading LabJack for python here: https://support.labjack.com/docs/python-for-ljm-windows-mac-linux
+    - Install Linuxx64 version of LJM software here: https://support.labjack.com/docs/ljm-software-installer-downloads-t4-t7-t8-digit#LJMSoftwareInstallerDownloads-T4,T7,T8,Digit-Linuxx64LJMSoftwareInstallerDownloads
+    - Install labjack-ljm to py_env environment using "pip install labjack-ljm" (make sure py_env environment is active during this step)
+ 
+## Run instructions: 
+ - Launch abp1 code using command ros2 launch docklab2 docklab2_abp1.launch.py
+ 
+## Docs: 
+# ABPX:
+Services: 
+Nodes: 
+Topics: 
+Services:
 
 ## Notes: 
  - colcon build command can crash the Raspberry Pi when running, use: colcon build --symlink-install --executor sequential (https://answers.ros.org/question/404536/colcon-build-fails-on-ros2-tutorials/)
