@@ -10,6 +10,6 @@ def generate_launch_description():
             package='docklab2',
             namespace='abp1',
             executable='service',
-            name='relay_server'
+            name='relay_server6'
         )
     ])
