@@ -63,12 +63,21 @@ YYYYYYYY is the password for the router
  
 # LabJack Setup Instructions
  - Follow instructions for downloading LabJack for python here: https://support.labjack.com/docs/python-for-ljm-windows-mac-linux
-    - Install Linuxx64 version of LJM software here: https://support.labjack.com/docs/ljm-software-installer-downloads-t4-t7-t8-digit#LJMSoftwareInstallerDownloads-T4,T7,T8,Digit-Linuxx64LJMSoftwareInstallerDownloads
+    - Install AArch64 installer for LabJack LJM Library from here: https://files.labjack.com/installers/LJM/Linux/AArch64/beta/LabJack-LJM_2025-01-10.zip (see INSTALL.md for instructions)
     - Install labjack-ljm to py_env environment using "pip install labjack-ljm" (make sure py_env environment is active during this step)
  
 ## Run instructions: 
  - Launch abp1 code using command ros2 launch docklab2 docklab2_abp1.launch.py
- 
+## Mocap
+https://github.com/MOCAP4ROS2-Project/mocap4ros2_optitrack.git
+- follow instructions
+- connect laptot to mocap laptop with ethernet. (check if you can do this wirelessly)
+- set motive to unicast with ip address of ros2 laptop 
+- change config folder to ip address of local and server
+- soruce wkspace
+- stream
+
+- this package doesnt work on a Raspberry Pis' or on anything older than humble
 ## Docs: 
 # ABPX:
 Services: 
@@ -84,3 +93,5 @@ Services:
 
 ## Notes: 
  - colcon build command can crash the Raspberry Pi when running, use: colcon build --symlink-install --executor sequential (https://answers.ros.org/question/404536/colcon-build-fails-on-ros2-tutorials/)
+
+ - 
