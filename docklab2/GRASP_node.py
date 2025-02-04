@@ -29,7 +29,7 @@ class GRASPNode(Node):
         super().__init__('GRASP_node')
         # Set up Serial
         self.ser = serial.Serial()
-        self.ser.port = '/dev/ttyACM1'
+        self.ser.port = '/dev/ttyACM0'
         self.ser.baudrate = 9600
         self.ser.timeout = 1 #timeout of 1s
         
