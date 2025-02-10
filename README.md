@@ -60,14 +60,20 @@ YYYYYYYY is the password for the router
  
 # Serial setup instructions
  - Execute "sudo chmod 666 /dev/ttyACM0" to enable opening serial port ttyACM0. This port may change if there is need to use serial comms with hardware other than the Teensy 4.1 
- 
+
+ # GPIO setup instructions
+  - To enable using GPIO over ssh add user to dialout group as below:
+"""
+sudo apt install rpi.gpio-common
+sudo adduser "${USER}" dialout
+sudo reboot
+"""
+
 # LabJack Setup Instructions
  - Follow instructions for downloading LabJack for python here: https://support.labjack.com/docs/python-for-ljm-windows-mac-linux
     - Install AArch64 installer for LabJack LJM Library from here: https://files.labjack.com/installers/LJM/Linux/AArch64/beta/LabJack-LJM_2025-01-10.zip (see INSTALL.md for instructions)
     - Install labjack-ljm to py_env environment using "pip install labjack-ljm" (make sure py_env environment is active during this step)
- 
-## Run instructions: 
- - Launch abp1 code using command ros2 launch docklab2 docklab2_abp1.launch.py
+
 ## Mocap
 https://github.com/MOCAP4ROS2-Project/mocap4ros2_optitrack.git
 - follow instructions
@@ -79,6 +85,7 @@ https://github.com/MOCAP4ROS2-Project/mocap4ros2_optitrack.git
 
 - this package doesnt work on a Raspberry Pis' or on anything older than humble
 ## Docs: 
+
 # ABPX:
 Services: 
 relay_server3 - server for services for changing state of relays on RPi Relay Board with 3 relays (https://thepihut.com/products/raspberry-pi-relay-board)
@@ -90,6 +97,32 @@ GRASP_node - node for communicating with GRASP MDE and updating GRASP state
 Topics: 
 
 Services:
+
+# Running Docklab 2: 
+Setup:
+
+On Labtop:
+ - Start Motive on Labtop
+ - If necessary calibrate camera setup
+ - If necessary select assets 
+ - Enable streaming of data to base station over Ethernet
+On base station: 
+ - Open terminal and navigate to mocap4r2_ws
+ - Source the workspace using "install/setup.bash"
+ - Launch the Optitrack system using "ros2 launch mocap4r2_optitrack_driver optitrack2.launch.py"
+ - Open a new terminal and navigate to mocap4r2_ws
+ - Source the workspace using "install/setup.bash"
+ - Transition the driver node to active using "ros2 lifecycle set /mocap4r2_optitrack_driver_node activate"
+On ABPX:
+ - Connect to ABPX over ssh from base station "ssh labpi@abp1.local"
+ - Change directory to docklab2_ws and source the workspace using "install/setup.bash"
+ - Launch the node for the platform using "ros2 launch docklab2 docklab2_abpX.launch.py"
+
+Running: 
+
+On base station: 
+ - Open terminal and run rqt using "rqt"
+ - Send commands to terminal manually over topic publisher or service tool.
 
 ## Notes: 
  - colcon build command can crash the Raspberry Pi when running, use: colcon build --symlink-install --executor sequential (https://answers.ros.org/question/404536/colcon-build-fails-on-ros2-tutorials/)
