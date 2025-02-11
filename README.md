@@ -108,14 +108,17 @@ On Labtop:
  - Enable streaming of data to base station over Ethernet
 On base station: 
  - Open terminal and navigate to mocap4r2_ws
- - Source the workspace using "install/setup.bash"
+ - Source the workspace using "source install/setup.bash"
  - Launch the Optitrack system using "ros2 launch mocap4r2_optitrack_driver optitrack2.launch.py"
  - Open a new terminal and navigate to mocap4r2_ws
- - Source the workspace using "install/setup.bash"
+ - Source the workspace using "source install/setup.bash"
  - Transition the driver node to active using "ros2 lifecycle set /mocap4r2_optitrack_driver_node activate"
+ - Open a new terminal and navigate to mocap4r2_ws
+ - Source the workspace using "source install/setup.bash"
+ - Run mocap_sub node using "ros2 run mocap_sub mocap_sub"
 On ABPX:
- - Connect to ABPX over ssh from base station "ssh labpi@abp1.local"
- - Change directory to docklab2_ws and source the workspace using "install/setup.bash"
+ - Connect to ABPX over ssh from base station "ssh labpi@abpX.local"
+ - Change directory to docklab2_ws and source the workspace using "source install/setup.bash"
  - Launch the node for the platform using "ros2 launch docklab2 docklab2_abpX.launch.py"
 
 Running: 
@@ -123,8 +126,9 @@ Running:
 On base station: 
  - Open terminal and run rqt using "rqt"
  - Send commands to terminal manually over topic publisher or service tool.
+ - To run complex commands:
+ - Change directory to docklab2_ws and source the workspace using "source install/setup.bash"
+ - Run the base control node using "ros2 run docklab2 base_control"
 
 ## Notes: 
  - colcon build command can crash the Raspberry Pi when running, use: colcon build --symlink-install --executor sequential (https://answers.ros.org/question/404536/colcon-build-fails-on-ros2-tutorials/)
-
- - 

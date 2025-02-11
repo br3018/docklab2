@@ -26,7 +26,8 @@ setup(
         'console_scripts': [
         'relay_control6 = docklab2.relay_server6:main',
         'relay_control3 = docklab2.relay_server3:main',
-        'GRASP_control = docklab2.GRASP_node:main'
+        'GRASP_control = docklab2.GRASP_node:main',
+        'base_control = docklab2.base_node:main'
         ],
     },
 )
