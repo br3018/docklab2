@@ -67,7 +67,9 @@ YYYYYYYY is the password for the router
 sudo apt install rpi.gpio-common
 sudo adduser "${USER}" dialout
 sudo reboot
-"""
+
+# Solo Motor Controller Setup 
+ - Install SoloPy here: https://github.com/Solo-FL/SoloPy.git
 
 # LabJack Setup Instructions
  - Follow instructions for downloading LabJack for python here: https://support.labjack.com/docs/python-for-ljm-windows-mac-linux
