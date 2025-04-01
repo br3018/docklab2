@@ -70,6 +70,8 @@ sudo reboot
 
 # Solo Motor Controller Setup 
  - Install SoloPy here: https://github.com/Solo-FL/SoloPy.git
+ - AVC device address: 0
+ - Grapple device address: 1
 
 # LabJack Setup Instructions
  - Follow instructions for downloading LabJack for python here: https://support.labjack.com/docs/python-for-ljm-windows-mac-linux
