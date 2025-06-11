@@ -24,6 +24,9 @@ class RelayServer(Node):
         self.Relay_Ch5 = DigitalOutputDevice("BCM26")
         self.Relay_Ch6 = DigitalOutputDevice("BCM21")
         
+        
+        print("This message was written from initiation of relay_server_6 node!")
+        
         # Add set Ch1 service
         self.srv = self.create_service(SetBool, 'set_Ch1', self.set_Ch1_callback)
         # Add set Ch2 service
