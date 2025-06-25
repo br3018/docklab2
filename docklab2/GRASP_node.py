@@ -59,7 +59,7 @@ class GRASPNode(Node):
         #    print('ERROR, not recognized board address, 1 board should have 1')
         # ---------------------------------------------------------------------------------------------------------------------------------
         
-        print("\n\n\n\n\ connecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
+        print("\n\n\n\n\n\n\n\n\nconnecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
         self.grapple_Solo         = self.grapple_motor_init()
         #self.avc_Solo     = self.avc_motor_init()
 
