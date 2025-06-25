@@ -59,7 +59,7 @@ class GRASPNode(Node):
         #    print('ERROR, not recognized board address, 1 board should have 1')
         # ---------------------------------------------------------------------------------------------------------------------------------
         
-        
+        print("\n\n\n\n\ connecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
         self.grapple_Solo         = self.grapple_motor_init()
         #self.avc_Solo     = self.avc_motor_init()
 
@@ -396,7 +396,8 @@ class GRASPNode(Node):
         current_iq_msg = Float64()
         current_iq_msg.data = self.gra_motor_current
         self.pub_gra_motor_curr_iq.publish(current_iq_msg)
- 
+        
+        '''
         # ----------------- AVC_DATA ----------------------------------
         avc_msg = String()
         avc_msg.data = f"State: {self.avc_state}, Pos ref: {self.avc_motor_pos_ref}, Pos counts: {self.avc_motor_pos},Speed: {self.avc_motor_speed},Current Iq: {self.avc_motor_current}"
@@ -416,6 +417,7 @@ class GRASPNode(Node):
         avc_current_iq_msg = Float64()
         avc_current_iq_msg.data = self.avc_motor_current
         self.pub_avc_motor_curr_iq.publish(avc_current_iq_msg)
+        '''
         
     # ================================= External flags management code ==============================================    
     def GRASP_external_flags(self,msg):
@@ -662,7 +664,7 @@ class GRASPNode(Node):
                 print('In MODE HOMING')
                 # Measure 
                 
-                if abs(self.motor_current) > current_threshold:
+                if abs(self.gra_motor_current) > current_threshold:
                     
                     #We have reached home, so let's stop the motor from spinning
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
@@ -673,14 +675,12 @@ class GRASPNode(Node):
                     self.get_logger().info(f"GRAPPLE has reached a current limit! commanded the motor to stop by setting torque to zero.")
                     time.sleep(0.5)                   #Pausing/waiting some seconds before we reset the position back to zero, because resetting the position is a hard_stop.
                     
-                    #self.motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
-                    # Let's set the position reference as the current position.
-                    #self.grapple_Solo.set_position_reference(self.motor_pos)
                     
                     #Reading again the feedback from motor because we used the pausing feature: time.sleep()
-                    self.motor_pos_ref, error = self.grapple_Solo.get_position_reference()
-                    self.motor_speed, error   = self.grapple_Solo.get_speed_feedback()
-                    self.motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
+                    self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
+                    self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
+                    self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
+                    self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
                     print('reset home position')
                     #Resetting position back to zero.
                     #self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
@@ -705,7 +705,7 @@ class GRASPNode(Node):
                 print('In MODE CAPTURING')
                 # Measure 
                 
-                if abs(self.motor_current) > current_threshold:
+                if abs(self.gra_motor_current) > current_threshold:
                     
                     #We have reached home, so let's stop the motor from spinning
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
@@ -715,19 +715,17 @@ class GRASPNode(Node):
                     print('Asked the motor top STOP by setting SPEED to zero.')
                     self.get_logger().info(f"GRAPPLE has reached a current limit! commanded the motor to stop by setting vel to zero.")
                     
-                    #self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
-                    #self.motor_pos
                     
                     time.sleep(2)                   #Pausing/waiting some seconds before we reset the position back to zero, because resetting the position is a hard_stop.
                     
-                    self.motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
+                    self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
                     # Let's set the position reference as the current position.
-                    self.grapple_Solo.set_position_reference(self.motor_pos)
+                    self.grapple_Solo.set_position_reference(self.gra_motor_pos)
                     
                     #Reading again the feedback from motor because we used the pausing feature: time.sleep()
-                    self.motor_pos_ref, error = self.grapple_Solo.get_position_reference()
-                    self.motor_speed, error   = self.grapple_Solo.get_speed_feedback()
-                    self.motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
+                    self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
+                    self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
+                    self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
                     
                     self.grapple_state = 'HARD_DOCK'
                     
@@ -762,7 +760,7 @@ class GRASPNode(Node):
                 #self.ser.write(state.encode())
             case _: # Catch invalid command 
                 self.get_logger().warning('Unknown GRASP state received')
-             
+        '''   
         # --------------  Checking AVC states and calling relevant code. ---------------------------  
         if self.grapple_state == "HARD_DOCK":
         # If we are in HARD_DOCK, we can run the AVC code
@@ -799,9 +797,6 @@ class GRASPNode(Node):
                         self.get_logger().info(f"GRAPPLE has reached a current limit! commanded the motor to stop by setting torque to zero.")
                         time.sleep(0.5)                   #Pausing/waiting some seconds before we reset the position back to zero, because resetting the position is a hard_stop.
                         
-                        #self.motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
-                        # Let's set the position reference as the current position.
-                        #self.grapple_Solo.set_position_reference(self.motor_pos)
                         
                         #Reading again the feedback from motor because we used the pausing feature: time.sleep()
                         self.avc_motor_pos_ref, error = self.avc_solo.get_position_reference()
@@ -832,7 +827,8 @@ class GRASPNode(Node):
             self.avc_motor_pos = 0
             self.avc_motor_speed = 0
             self.avc_motor_current = 0.0
-    
+        '''
+        
         #time_1 = time.time()
         # Publish data
         self.publish_data()
