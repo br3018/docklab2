@@ -59,7 +59,7 @@ class GRASPNode(Node):
         #    print('ERROR, not recognized board address, 1 board should have 1')
         # ---------------------------------------------------------------------------------------------------------------------------------
         
-        print("\n\n\n\n\n\n\n\n\nconnecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
+        print("\n\n\n\n\n\n\n\n\nConnecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
         self.grapple_Solo         = self.grapple_motor_init()
         #self.avc_Solo     = self.avc_motor_init()
 
@@ -75,13 +75,13 @@ class GRASPNode(Node):
         
         
         # Add GRASP state subscribers
-        self.subscription = self.create_subscription(String, '/GRASP_flags',               self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
-        self.subscription = self.create_subscription(Float64,'/grapple_motor/position_cmd',self.grapple_motor_position_control,10)
-        self.subscription = self.create_subscription(Float64,'/grapple_motor/velocity_cmd',self.grapple_motor_speed_control,10)
-        self.subscription = self.create_subscription(Float64,'/grapple_motor/torque_cmd',  self.grapple_motor_torque_control,10)
-        self.subscription = self.create_subscription(Float64,'/avc_motor/position_cmd',self.avc_motor_position_control,10)
-        self.subscription = self.create_subscription(Float64,'/avc_motor/velocity_cmd',self.avc_motor_speed_control,10)
-        self.subscription = self.create_subscription(Float64,'/avc_motor/torque_cmd',  self.avc_motor_torque_control,10)
+        self.subscription = self.create_subscription(String, 'GRASP_flags',               self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
+        self.subscription = self.create_subscription(Float64,'grapple_motor/position_cmd',self.grapple_motor_position_control,10)
+        self.subscription = self.create_subscription(Float64,'grapple_motor/velocity_cmd',self.grapple_motor_speed_control,10)
+        self.subscription = self.create_subscription(Float64,'grapple_motor/torque_cmd',  self.grapple_motor_torque_control,10)
+        self.subscription = self.create_subscription(Float64,'avc_motor/position_cmd',self.avc_motor_position_control,10)
+        self.subscription = self.create_subscription(Float64,'avc_motor/velocity_cmd',self.avc_motor_speed_control,10)
+        self.subscription = self.create_subscription(Float64,'avc_motor/torque_cmd',  self.avc_motor_torque_control,10)
         self.subscription # prevent unused variable error
         
         self.pub_gra_motor_feedback = self.create_publisher(String,  'gra_motor_feedback', 10)
@@ -354,24 +354,6 @@ class GRASPNode(Node):
         self.avc_motor_control_mode = "TORQUE"
         self.get_logger().info(f"TORQUE MODE: Commanding the motor to rotate with torque: {torque_ref}")
         self.avc_Solo.set_torque_reference_iq(torque_ref)
-        
-        
-
-    def serial_disconnect_callback(self, request, response):
-        # Tiago's comment: Still haven't looked what this function is for and if we need it, but was here before so won't remove it for now.
-        try:    
-            self.ser.close()
-        except:
-            self.get_logger().warning('Serial communications error')
-        # Composing response
-        # Checking serial port is closed
-        if self.ser.is_open == False: 
-            response.success = True
-            self.get_logger().info('Disconnected from MDE')
-        else:
-            response.success = False
-            self.get_logger().warning('Failed to disconnect from MDE')
-        return response
         
     # ======================= Function to publish data into topics =========================================
     def publish_data(self):
