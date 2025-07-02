@@ -31,37 +31,12 @@ class GRASPNode(Node):
     def __init__(self):
         # Set node name 
         super().__init__('GRASP_node')
-        # Set up motor controller instances
+        
+        print("\n\n\nConnecting with GRASP \n\n\n")  
+        self.grapple_Solo = self.grapple_motor_init()
+        #self.avc_Solo = self.avc_motor_init()
 
-
-        # -----------------------Improvement to be done once we figure it out out tochange the adress in each board:  -----------------------
-        # Understand which board is which:
-        
-        #Solo_1 = solo.SoloMotorControllerUart(port="/dev/ttyACM0",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        #Solo_2 = solo.SoloMotorControllerUart(port="/dev/ttyACM0",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        
-        #try:    
-        #    solo1_adress, error = Solo_1.get_device_address()[0] 
-        #except:
-        #    self.get_logger().warning('Tried to communicate with port /dev/ttyACM0 but no board is connected there')
-            
-        
-        #solo1_adress, error = Solo_1.get_device_address()[0]
-        #solo1_adress, error = Solo_2.get_device_address()[0]
-        
-        #if solo1_adress1 == 3 and solo2_adress == 7:
-        #    self.avc_Solo = Solo_1
-        #    self.grapple_Solo = Solo_2
-        #elif solo1_adress1 == 7 and solo2_adress == 3:
-        #    self.avc_Solo = Solo_2
-        #    self.grapple_Solo = Solo_1
-        #else:
-        #    print('ERROR, not recognized board address, 1 board should have 1')
-        # ---------------------------------------------------------------------------------------------------------------------------------
-        
-        print("\n\n\n\n\n\n\n\n\nconnecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
-        self.grapple_Solo         = self.grapple_motor_init()
-        #self.avc_Solo     = self.avc_motor_init()
+        # Testing creation of localuserbranch/palashmattoo and then pushing to userbranch/palashmattoo (remote) and then merging at some point with main.
 
         
         
