@@ -18,6 +18,7 @@ from std_msgs.msg import Int32
 import SoloPy as solo
 # if solopy is not found in ROS2, need to run this before 
 # export PYTHONPATH=/home/labpi/py_env/lib/python3.12/site-packages:$PYTHONPATH
+import glob
 import serial
 import time
 #import csv
@@ -36,18 +37,12 @@ class GRASPNode(Node):
         self.grapple_Solo = self.grapple_motor_init()
         #self.avc_Solo = self.avc_motor_init()
 
-        # Testing creation of localuserbranch/palashmattoo and then pushing to userbranch/palashmattoo (remote) and then merging at some point with main.
-
-        
-        
-        #set up function that runs constatntly monitoring the state machine
+        # Set up a function that runs constantly to monitor the state machine
         self.timer = self.create_timer(0.1, self.GRASP_state_machine)
-        
         
         # Add serial close service
         #self.srv = self.create_service(Trigger, 'grapple_init', self.grapple_init_callback)
         #self.srv = self.create_service(Trigger, 'grapple_init', self.avc_init_callback)
-        
         
         # Add GRASP state subscribers
         self.subscription = self.create_subscription(String, '/GRASP_flags',               self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
@@ -57,7 +52,7 @@ class GRASPNode(Node):
         self.subscription = self.create_subscription(Float64,'/avc_motor/position_cmd',self.avc_motor_position_control,10)
         self.subscription = self.create_subscription(Float64,'/avc_motor/velocity_cmd',self.avc_motor_speed_control,10)
         self.subscription = self.create_subscription(Float64,'/avc_motor/torque_cmd',  self.avc_motor_torque_control,10)
-        self.subscription # prevent unused variable error
+        self.subscription # Prevent unused variable error
         
         self.pub_gra_motor_feedback = self.create_publisher(String,  'gra_motor_feedback', 10)
         self.pub_gra_motor_curr_iq  = self.create_publisher(Float64, 'gra_motor_current_iq', 10)
@@ -87,12 +82,48 @@ class GRASPNode(Node):
 
     # ================================= GRAPPLE motor initialization ==============================================
     def grapple_motor_init(self):
-    
-        #Connect with the motor
+
+        # Code block to figure out which ACM ports are even available.
+        print('Running a search for available serial devices')
+        ports_searched = glob.glob('dev/ttyACM[0-9]*')
+        available_ports = []
+        for port in ports_searched:
+            try:
+                s = serial.Serial(port)
+                s.close()
+                available_ports.append(port)
+                print(f"Found a device active on ACM{port}")
+            except:
+                pass
+            return available_ports
         
-        grapple_Solo = solo.SoloMotorControllerUart(port="/dev/ttyACM0",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        
-        print('Reseting position to zero:')
+        if not available_ports:
+            print('No serial devices detected')
+        else:
+            pass
+                    
+        # Initialise GRAPPLE motor driver
+        print('Initialising GRAPPLE')
+        print('Expecting GRAPPLE motor driver address to be 7')
+        grapple_connection_successful = 0
+        while grapple_connection_successful = 0:
+            for grapple_port in available_ports:
+            print(f"Attempting to connect to GRAPPLE motor driver over ACM{grapple_port}")
+            grapple_Solo = solo.SoloMotorControllerUart(port=f"/dev/ttyACM{grapple_port}", baudrate=solo.UartBaudRate.RATE_937500, address=7)
+            motor_address = grapple_Solo.get_device_address()[0]
+            print(f"ACM{grapple_port} reads back address as {motor_address}")
+            if motor_address == 7:
+                print(f"Successfully connected to GRAPPLE motor driver ACM{grapple_port}")
+                grapple_connection_successful = 1
+                # Some way to feed out this serial port to use in AVC initialisation to avoid hogging this successful connection
+            else:
+                print(f"Could not find GRAPPLE motor driver over ACM{grapple_port}")
+                print(f"Disconnecting from ACM{grapple_port}")
+                grapple_Solo.serial_close()
+                grapple_connection_successful = 0
+
+
+        print('Resetting position to zero:')
         grapple_Solo.reset_position_to_zero()
         
         print(f"GRAPPPLE device address: {grapple_Solo.get_device_address()[0]}")
