@@ -7,8 +7,6 @@ from rclpy.node import Node
 # Import service type 
 from std_srvs.srv import Trigger
 
-#from docklab2.srv import MoveMotor
-
 # Import message type 
 from std_msgs.msg import String
 from std_msgs.msg import Float64
@@ -16,74 +14,70 @@ from std_msgs.msg import Int32
 
 # Import Python libraries 
 import SoloPy as solo
-# if solopy is not found in ROS2, need to run this before 
-# export PYTHONPATH=/home/labpi/py_env/lib/python3.12/site-packages:$PYTHONPATH
+'''If solopy is not found in ROS2, need to run this before:
+export PYTHONPATH=/home/labpi/py_env/lib/python3.12/site-packages:$PYTHONPATH'''
 import serial
 import time
-#import csv
-#import os
+import glob
 from datetime import datetime
 
+# Print a what exactly?
 print(solo.__file__)
 
+# Set logging levels for a less clogged output
+grapple_logger_level = 0
+avc_logger_level = 0
+
+# Search for available serial devices. 
+print('Running a search for available serial devices')
+ports_found = 0
+while ports_found == 0:
+    ports_searched = glob.glob('/dev/ttyACM[0-9]*')
+    ports_found = len(ports_searched)
+    print('No serial devices found. Awaiting connection.')
+    time.sleep(1)
+available_ports = []
+for port in ports_searched:
+    try:
+        s = serial.Serial(port)
+        s.close()
+        available_ports.append(str(port))
+        print(f"Found a device active on: {port}")
+    except:
+        pass
+
+# Class definition for GRASP Node
 class GRASPNode(Node):
-    # Constructor
+    # Constructor, initialises GRAPPLE and AVC motors by calling the init definitions.
     def __init__(self):
+
         # Set node name 
         super().__init__('GRASP_node')
-        # Set up motor controller instances
+        
+        print("\nConnecting with GRASP \n")
 
-
-        # -----------------------Improvement to be done once we figure it out out tochange the adress in each board:  -----------------------
-        # Understand which board is which:
+        # Initiate GRAPPLE and AVC motor drivers
+        self.grapple_Solo = self.grapple_motor_init()        
+        self.avc_Solo = self.avc_motor_init()
         
-        #Solo_1 = solo.SoloMotorControllerUart(port="/dev/ttyACM0",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        #Solo_2 = solo.SoloMotorControllerUart(port="/dev/ttyACM0",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        
-        #try:    
-        #    solo1_adress, error = Solo_1.get_device_address()[0] 
-        #except:
-        #    self.get_logger().warning('Tried to communicate with port /dev/ttyACM0 but no board is connected there')
-            
-        
-        #solo1_adress, error = Solo_1.get_device_address()[0]
-        #solo1_adress, error = Solo_2.get_device_address()[0]
-        
-        #if solo1_adress1 == 3 and solo2_adress == 7:
-        #    self.avc_Solo = Solo_1
-        #    self.grapple_Solo = Solo_2
-        #elif solo1_adress1 == 7 and solo2_adress == 3:
-        #    self.avc_Solo = Solo_2
-        #    self.grapple_Solo = Solo_1
-        #else:
-        #    print('ERROR, not recognized board address, 1 board should have 1')
-        # ---------------------------------------------------------------------------------------------------------------------------------
-        
-        print("\n\n\n\n\n\n\n\n\nConnecting with GRAPPLE \n\n\n\n\n\n\n\n\n")  
-        self.grapple_Solo         = self.grapple_motor_init()
-        #self.avc_Solo     = self.avc_motor_init()
-
-        
-        
-        #set up function that runs constatntly monitoring the state machine
+        # Set up a function that constantly monitors the state machine
         self.timer = self.create_timer(0.1, self.GRASP_state_machine)
-        
         
         # Add serial close service
         #self.srv = self.create_service(Trigger, 'grapple_init', self.grapple_init_callback)
         #self.srv = self.create_service(Trigger, 'grapple_init', self.avc_init_callback)
         
-        
         # Add GRASP state subscribers
-        self.subscription = self.create_subscription(String, 'GRASP_flags',               self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
-        self.subscription = self.create_subscription(Float64,'grapple_motor/position_cmd',self.grapple_motor_position_control,10)
-        self.subscription = self.create_subscription(Float64,'grapple_motor/velocity_cmd',self.grapple_motor_speed_control,10)
-        self.subscription = self.create_subscription(Float64,'grapple_motor/torque_cmd',  self.grapple_motor_torque_control,10)
-        self.subscription = self.create_subscription(Float64,'avc_motor/position_cmd',self.avc_motor_position_control,10)
-        self.subscription = self.create_subscription(Float64,'avc_motor/velocity_cmd',self.avc_motor_speed_control,10)
-        self.subscription = self.create_subscription(Float64,'avc_motor/torque_cmd',  self.avc_motor_torque_control,10)
+        self.subscription = self.create_subscription(String, 'GRASP_flags',                self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
+        self.subscription = self.create_subscription(Float64,'grapple_motor/position_cmd', self.grapple_motor_position_control,10)
+        self.subscription = self.create_subscription(Float64,'grapple_motor/velocity_cmd', self.grapple_motor_speed_control,10)
+        self.subscription = self.create_subscription(Float64,'grapple_motor/torque_cmd',   self.grapple_motor_torque_control,10)
+        self.subscription = self.create_subscription(Float64,'avc_motor/position_cmd',     self.avc_motor_position_control,10)
+        self.subscription = self.create_subscription(Float64,'avc_motor/velocity_cmd',     self.avc_motor_speed_control,10)
+        self.subscription = self.create_subscription(Float64,'avc_motor/torque_cmd',       self.avc_motor_torque_control,10)
         self.subscription # prevent unused variable error
         
+        # Add GRASP publishers
         self.pub_gra_motor_feedback = self.create_publisher(String,  'gra_motor_feedback', 10)
         self.pub_gra_motor_curr_iq  = self.create_publisher(Float64, 'gra_motor_current_iq', 10)
         self.pub_gra_motor_pos      = self.create_publisher(Int32,   'gra_motor_pos', 10)
@@ -93,7 +87,7 @@ class GRASPNode(Node):
         self.pub_avc_motor_pos      = self.create_publisher(Int32,   'avc_motor_pos', 10)
         self.pub_avc_motor_vel      = self.create_publisher(Int32,   'avc_motor_vel', 10)
         
-        self.get_logger().info('GRASP_node initiated with a periodic state machine, and state set to HOME.')
+        self.get_logger().info('GRASP_node initiated with a periodic state machine, and state set to HOME.') # Don't we want to set this to IDLE first by default?
         
         self.grapple_state = 'IDLE'
         self.avc_state     = 'AVC_IDLE'
@@ -110,45 +104,64 @@ class GRASPNode(Node):
         #self.GRAPPLE_POS_LUT.OPEN      = 5000 
         #self.GRAPPLE_POS_LUT.RELEASE   = 5000 
 
-    # ================================= GRAPPLE motor initialization ==============================================
+    # GRAPPLE motor initialization
     def grapple_motor_init(self):
-    
-        #Connect with the motor
-        
-        grapple_Solo = solo.SoloMotorControllerUart(port="/dev/ttyACM0",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        
-        print('Reseting position to zero:')
+
+        # Initialise GRAPPLE motor driver
+        grapple_connection_successful = 0
+        while grapple_connection_successful == 0:
+            for grapple_port in available_ports:
+                self.get_logger().info(f"Attempting to connect to GRAPPLE motor driver over {grapple_port}")
+                grapple_Solo = solo.SoloMotorControllerUart(port=grapple_port, baudrate=solo.UartBaudRate.RATE_937500, address =7, loggerLevel=grapple_logger_level)
+                motor_address = grapple_Solo.get_device_address()[0]
+                self.get_logger().info(f"{grapple_port} reads back motor address as {motor_address}")
+                if motor_address == 7:
+                    self.get_logger().info(f"Successfully connected to GRAPPLE motor driver over {grapple_port}")
+                    grapple_connection_successful = 1
+                    available_ports.remove(grapple_port)
+                    break
+                else:
+                    self.get_logger().warn(f"Could not find GRAPPLE motor driver over {grapple_port}")
+                    self.get_logger().warn(f"Disconnecting from {grapple_port}")
+                    grapple_Solo.serial_close()
+                    grapple_connection_successful = 0
+
+        # Reset initial position to zero
+        self.get_logger().info(f"Resetting GRAPPLE position to zero.")
+        #self.get_logger().info('Just a test print.')
         grapple_Solo.reset_position_to_zero()
         
-        print(f"GRAPPPLE device address: {grapple_Solo.get_device_address()[0]}")
+        # Print some stuff        
+        # print("--------------- GRAPPLE MOTOR ------------------")
+        # print("---- Position Reference: "       + str(grapple_Solo.get_position_reference()[0]) )
+        # print("---- Position Counts feedback: " + str(grapple_Solo.get_position_counts_feedback()[0]) )
+        # print("Is the motor enabled: " + str(grapple_Solo.is_drive_enabled() ))
         
-        print("--------------- GRAPPLE MOTOR ------------------")
-        print("---- Position Reference: "       + str(grapple_Solo.get_position_reference()[0]) )
-        print("---- Position Counts feedback: " + str(grapple_Solo.get_position_counts_feedback()[0]) )
-        #print("Is the motor enabled: " + str(grapple_Solo.is_drive_enabled() ))
-        
+        # Check GRAPPLE connection status and proceed accordingly
         if grapple_Solo.connect():
-            self.get_logger().info(f"Connected to GRAPPLE motor")
+        
+            # self.get_logger().info(f"Connected to GRAPPLE motor")
             
             # Initial Configuration of the device and the Motor
-            grapple_Solo.set_output_pwm_frequency_khz(20)              # Desired Switching or PWM Frequency at Output
-            grapple_Solo.set_current_limit(3)                          # Current Limit of the Motor
-            grapple_Solo.set_motor_poles_counts(4)                     # Motor's Number of Poles
-            grapple_Solo.set_command_mode(solo.CommandMode.DIGITAL)    # 
+            grapple_Solo.set_output_pwm_frequency_khz(20)              # Desired switching or PWM frequency at output
+            grapple_Solo.set_current_limit(3)                          # Current limit of the motor
+            grapple_Solo.set_motor_poles_counts(4)                     # Motor's number of poles
+            grapple_Solo.set_command_mode(solo.CommandMode.DIGITAL)    # We're using digital command mode instead of analog
             grapple_Solo.set_motor_type(solo.MotorType.BLDC_PMSM)
             grapple_Solo.set_feedback_control_mode(solo.FeedbackControlMode.HALL_SENSORS)
-            grapple_Solo.set_current_controller_kp(1.2)                # current controller Kp
-            grapple_Solo.set_current_controller_ki(0.014)              # current controller Ki
+            grapple_Solo.set_current_controller_kp(1.2)                # Current controller Kp
+            grapple_Solo.set_current_controller_ki(0.014)              # Current controller Ki
             grapple_Solo.set_speed_controller_kp(0.2)                  # Speed controller Kp
             grapple_Solo.set_speed_controller_ki(0.004)                # Speed controller Ki
             grapple_Solo.set_position_controller_kp(20)                # Position controller Kp
             grapple_Solo.set_position_controller_ki(0)                 # Position controller Ki
             grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
             grapple_Solo.set_speed_limit(4750)                         # Desired Speed Limit[RPM].
-            grapple_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
-            grapple_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
+            grapple_Solo.set_speed_acceleration_value(100)             # Speed acceleration limit[RPM].
+            grapple_Solo.set_speed_deceleration_value(100)             # Speed deceleration limit[RPM].
             
-            print(f"   RAPPLE Board Temperature: {str(grapple_Solo.get_board_temperature()[0])} degrees")  
+            '''
+            print(f"   GRAPPLE Board Temperature: {str(grapple_Solo.get_board_temperature()[0])} degrees")  
             print("    The position controller gains for the GRAPPLE motor are:")
             print("        Kp = " + str(grapple_Solo.get_position_controller_kp()[0] ) )
             print("     OPEN   Ki = " + str(grapple_Solo.get_position_controller_ki()[0] ) )
@@ -162,35 +175,50 @@ class GRASPNode(Node):
             print("    Speed Limit is: " + str(grapple_Solo.get_speed_limit()[0] ) )
             print("    Current Limit is: " + str(grapple_Solo.get_current_limit()[0] ) )
             print("    Speed acceleration limit is: " + str(grapple_Solo.get_speed_acceleration_value()[0] ) )
-            
+            '''
             self.grapple_state = 'IDLE'
+            self.get_logger().info("GRAPPLE set to IDLE")
             self.gra_motor_pos = grapple_Solo.get_position_counts_feedback()[0]
             self.gra_motor_control_mode = "POSITION"
-            
         else:
             self.get_logger().warning('Failed to establish connection with GRAPPLE Solo Motor Controller')
         return grapple_Solo
 
-
-    # ================================= AVC motor initialization ==============================================
+    # AVC motor initialization
     def avc_motor_init(self):
-    
-        #Connect with the motor
+
+        # Initialise AVC motor driver
+        # print(available_ports)
+        avc_connection_successful = 0
+        while avc_connection_successful == 0:
+            for avc_port in available_ports:
+                self.get_logger().info(f"Attempting to connect to AVC motor driver over {avc_port}")
+                avc_Solo = solo.SoloMotorControllerUart(port=avc_port, baudrate=solo.UartBaudRate.RATE_937500, address =3, loggerLevel=avc_logger_level)
+                motor_address = avc_Solo.get_device_address()[0]
+                self.get_logger().info(f"{avc_port} reads back motor address as {motor_address}")
+                if motor_address == 3:
+                    self.get_logger().info(f"Successfully connected to AVC motor driver over {avc_port}")
+                    avc_connection_successful = 1
+                    available_ports.remove(avc_port)
+                    break
+                else:
+                    self.get_logger().warn(f"Could not find AVC motor driver over {avc_port}")
+                    self.get_logger().warn(f"Disconnecting from {avc_port}")
+                    avc_Solo.serial_close()
+                    avc_connection_successful = 0
         
-        avc_Solo = solo.SoloMotorControllerUart(port="/dev/ttyACM1",baudrate=solo.UartBaudRate.RATE_937500) #This port connection worked.
-        
-        print('Reseting position to zero:')
+        # Reset initial position to zero
+        self.get_logger().info('Resetting AVC position to zero.')
         avc_Solo.reset_position_to_zero()
         
-        print(f"AVC device address: {avc_Solo.get_device_address()[0]}")
-        
-        print("--------------- AVC MOTOR ------------------")
-        print("---- Position Reference: "       + str(avc_Solo.get_position_reference()[0]) )
-        print("---- Position Counts feedback: " + str(avc_Solo.get_position_counts_feedback()[0]) )
+        # Print some stuff
+        # print("--------------- AVC MOTOR ------------------")
+        # print("---- Position Reference: "       + str(avc_Solo.get_position_reference()[0]) )
+        # print("---- Position Counts feedback: " + str(avc_Solo.get_position_counts_feedback()[0]) )
         
         
         if avc_Solo.connect():
-            self.get_logger().info(f"Connected to AVC motor")
+            # self.get_logger().info(f"Connected to AVC motor")
             
             # Initial Configuration of the device and the Motor
             avc_Solo.set_output_pwm_frequency_khz(20)              # Desired Switching or PWM Frequency at Output
@@ -208,6 +236,7 @@ class GRASPNode(Node):
             avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
             avc_Solo.set_speed_limit(4000)                         # Desired Speed Limit[RPM].
             
+            '''
             print(f"   AVC Board Temperature: {str(avc_Solo.get_board_temperature()[0])} degrees")  
             print("    The position controller gains for the AVC motor are:")
             print("        Kp = " + str(avc_Solo.get_position_controller_kp()[0] ) )
@@ -221,41 +250,38 @@ class GRASPNode(Node):
             print("    Control mode is: " + str(avc_Solo.get_control_mode()[0] ) )
             print("    Speed Limit is: " + str(avc_Solo.get_speed_limit()[0] ) )
             print("    Current Limit is: " + str(avc_Solo.get_current_limit()[0] ) )
-            
+            '''
+
             self.avc_state = 'AVC_IDLE'
+            self.get_logger().info('AVC set to IDLE')
             self.avc_pos = avc_Solo.get_position_counts_feedback()[0]
             self.gra_motor_control_mode = "POSITION"
         else:
             self.get_logger().warning('Failed to establish connection with AVC Solo Motor Controller')
         return avc_Solo
-        
     
-    #======================== functions to interact directly with GRAPPLE motor for pos, speed and torque control ==============================
+    # Debugging functions to interact directly with GRAPPLE motor for position, speed and torque control
     def grapple_motor_position_control(self, msg):
-        # This a function to request a specific position to the motor. !!!!! This is a debugging function. Won't be needed in the final code version.!!!!! 
+        # This a function to request a specific position to the motor.
         
         position_ref = msg.data
         self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
         self.gra_motor_control_mode = "POSITION"
         self.get_logger().info(f"POSITION MODE: Commanding the motor to rotate to position: {position_ref}")
         self.grapple_Solo.set_position_reference(position_ref)
-        
-        
     def grapple_motor_speed_control(self, msg):
-        # This a function to request a specific speed to the motor. !!!!! This is a debugging function. Won't be needed in the final code version.!!!!! 
+        # This a function to request a specific speed to the motor.
         
-        #C.W (Clockwise), is going outwards, i.r,is negative quadpulses
+        # Clockwise extends GRAPPLE outwards. Corresponds to movement in negative quad pulses.
         velocity_input = msg.data
         
-        #set_motor direction
+        # Set motor direction
         if velocity_input >= 0:
-            print('The velocity is positive, and we want to go go COUNTER CLOCKWISE')
-            # Velocity is positive, so we want to go COUNTERCLOCKWISE
+            print('The velocity is positive, and we want to go COUNTER CLOCKWISE')
             direction = solo.Direction.COUNTERCLOCKWISE
             
         else:
             print('The velocity is negative, and we want to go CLOCKWISE')
-            # Velocity is negative, so we want to go CLOCKWISE
             direction = solo.Direction.CLOCKWISE
             
         self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
@@ -263,21 +289,19 @@ class GRASPNode(Node):
         
         velocity_ref = abs(velocity_input)
         
-        #Set control mode to SPEED
+        # Set control mode to SPEED
         self.gra_motor_control_mode = "SPEED"
         # Command speed reference
         self.grapple_Solo.set_speed_reference(velocity_ref)
         self.get_logger().info(f"VELOCITY MODE: Commanding the motor to rotate {direction} at velocity: {velocity_ref}")
-        
-        
     def grapple_motor_torque_control(self, msg):
-        # This a function to request a specific torque to the motor. !!!!! This is a debugging function. Won't be needed in the final code version.!!!!! 
+        # This a function to request a specific torque to the motor.
         
         torque_input = msg.data
         
-        #set_motor direction
+        # Set motor direction
         if torque_input >= 0:
-            print('The torque is positive, so we want to go go COUNTER CLOCKWISE')
+            print('The torque is positive, so we want to go COUNTER CLOCKWISE')
             # Velocity is positive, so we want to go COUNTERCLOCKWISE
             self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
         else:
@@ -289,30 +313,27 @@ class GRASPNode(Node):
         
         self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
         self.gra_motor_control_mode = "TORQUE"
+        # What is the difference between the two commands above?
         self.get_logger().info(f"TORQUE MODE: Commanding the motor to rotate with torque: {torque_ref}")
         self.grapple_Solo.set_torque_reference_iq(torque_ref)
     
-    
-    #======================== functions to interact directy with AVC motor for pos, speed and torque control ==============================
+    # Debugging functions to interact directly with AVC motor for position, speed and torque control
     def avc_motor_position_control(self, msg):
-        # This a function to request a specific position to the motor. !!!!! This is a debugging function. Won't be needed in the final code version.!!!!! 
-        
+        # This a function to request a specific position to the motor.
         position_ref = msg.data
         self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
         self.avc_motor_control_mode = "POSITION"
         self.get_logger().info(f"POSITION MODE: Commanding the motor to rotate to position: {position_ref}")
         self.avc_Solo.set_position_reference(position_ref)
-        
-        
     def avc_motor_speed_control(self, msg):
-        # This a function to request a specific speed to the motor. !!!!! This is a debugging function. Won't be needed in the final code version.!!!!! 
+        # This a function to request a specific speed to the motor.
         
-        #C.W (Clockwise), is going outwards, i.r,is negative quadpulses
+        # Clockwise extends AVC outwards. Corresponds to movement in negative quad pulses.
         velocity_input = msg.data
         
         #set_motor direction
         if velocity_input >= 0:
-            print('The velocity is positive, and we want to go go COUNTER CLOCKWISE')
+            print('The velocity is positive, and we want to go COUNTER CLOCKWISE')
             # Velocity is positive, so we want to go COUNTERCLOCKWISE
             direction = solo.Direction.COUNTERCLOCKWISE
             
@@ -326,21 +347,19 @@ class GRASPNode(Node):
         
         velocity_ref = abs(velocity_input)
         
-        #Set control mode to SPEED
+        # Set control mode to SPEED
         self.avc_motor_control_mode = "SPEED"
         # Command speed reference
         self.avc_Solo.set_speed_reference(velocity_ref)
         self.get_logger().info(f"VELOCITY MODE: Commanding the motor to rotate {direction} at velocity: {velocity_ref}")
-        
-        
     def avc_motor_torque_control(self, msg):
-        # This a function to request a specific torque to the motor. !!!!! This is a debugging function. Won't be needed in the final code version.!!!!! 
+        # This a function to request a specific torque to the motor.
         
         torque_input = msg.data
         
-        #set_motor direction
+        # Set motor direction
         if torque_input >= 0:
-            print('The torque is positive, so we want to go go COUNTER CLOCKWISE')
+            print('The torque is positive, so we want to go COUNTER CLOCKWISE')
             # Velocity is positive, so we want to go COUNTERCLOCKWISE
             self.avc_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
         else:
@@ -355,7 +374,7 @@ class GRASPNode(Node):
         self.get_logger().info(f"TORQUE MODE: Commanding the motor to rotate with torque: {torque_ref}")
         self.avc_Solo.set_torque_reference_iq(torque_ref)
         
-    # ======================= Function to publish data into topics =========================================
+    # Function to publish data into topics
     def publish_data(self):
         # This function publish the data we want to record for external analysis
         
@@ -379,7 +398,6 @@ class GRASPNode(Node):
         current_iq_msg.data = self.gra_motor_current
         self.pub_gra_motor_curr_iq.publish(current_iq_msg)
         
-        '''
         # ----------------- AVC_DATA ----------------------------------
         avc_msg = String()
         avc_msg.data = f"State: {self.avc_state}, Pos ref: {self.avc_motor_pos_ref}, Pos counts: {self.avc_motor_pos},Speed: {self.avc_motor_speed},Current Iq: {self.avc_motor_current}"
@@ -399,117 +417,78 @@ class GRASPNode(Node):
         avc_current_iq_msg = Float64()
         avc_current_iq_msg.data = self.avc_motor_current
         self.pub_avc_motor_curr_iq.publish(avc_current_iq_msg)
-        '''
         
-    # ================================= External flags management code ==============================================    
+    # EXTERNAL FLAG MANAGEMENT  
     def GRASP_external_flags(self,msg):
-        # This functions runs when we receive an external flag through the topic /GRASP_flags
-        # This means that this code does not run in loop. It's only triggered with the flags, like an interruption. 
-        # We first will match the received flag and then perform the associate
-    
+        '''This function runs when we receive an external flag through the topic /GRASP_flags
+           This means that this code does not run in a loop. It's only triggered with the flags, like an interruption. 
+           We will first match the received flag and then perform the associated actions.'''
         flag = msg.data   
-        
         match flag:
-        
-            case 'GO_OPEN':
-                
-                if self.grapple_state != 'HOME':
-                    # There must be an error. Previous state has to be HOME, or motor position is not zero!
-                    # We should abort
-                    self.get_logger().warning("Failed to change mode to 'OPEN' because previous state isn't HOME. ")
-                    return
-        
-        
-                self.grapple_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
-                self.grapple_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
-                
-                self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
-                self.gra_motor_control_mode = "POSITION"
-                
-                # Set position reference to -5000.
-                #self.target_pos = -5000
-                self.target_pos = -41000
-                
-                self.get_logger().info(f"Commanding now grapple_motor to rotate to position {self.target_pos}")
-                self.grapple_Solo.set_position_reference(self.target_pos)
-                self.grapple_state = 'OPEN'
-                
-            case 'GO_CAPTURE':
-            
-                if self.grapple_state != 'OPEN':
-                    # There must be an error. Previous state has to be HOME.
-                    # We should abort
-                    self.get_logger().warning("Failed to change mode to 'CAPTURE' because previous state isn't OPEN. ")
-                    return
-                
-                self.grapple_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
-                self.grapple_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
-                
-                # change to velocity mode
-                self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE) 
-                self.gra_motor_control_mode = "SPEED"
-                
-                # Set motor spin direction, we want to close GRASP, which is moving motor in COUNTER CLOCK WISE
-                self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
-                
-                speed_ref = 4750
-                #speed_ref = 3000
-                
-                self.grapple_Solo.set_speed_reference(speed_ref)
-                self.grapple_state = 'CAPTURING'
-                
-                ## Set position reference
-                #capture_pos_delta = 500
-                
-                #initial_pos, error = self.grapple_Solo.get_position_counts_feedback();
-                #self.target_pos  = initial_pos + capture_pos_delta
-                
-                #self.get_logger().info(f"Position counts feedback: {initial_pos}.")
-                #self.get_logger().info(f"Commanding now grapple_motor to rotate to position {self.target_pos}")
-                ##self.grapple_Solo.set_position_reference(self.target_pos)
-                
-            
+            # GRAPPLE related flags
             case 'GO_HOME':
-                # change to velocity mode
+                # Send confirmation message
+                self.get_logger().info('Received command to home GRAPPLE mechanism.')
+                # Set control mode to torque. GRAPPLE homing done in torque mode.
                 self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE) 
                 self.gra_motor_control_mode = "TORQUE"
-                # Set motor spin direction, we want to close GRASP, which is moving motor in COUNTER CLOCK WISE
+                # Set motor spin direction. We want to retract the GRAPPLE carriage, which is done by moving the GRAPPLE motor counterclockwise.
                 self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
-                
+                # Set torque reference current. Homing tested to work reliably with 2A.
                 torque_ref = 2
-                #torque_ref = 0.2
-                
                 self.grapple_Solo.set_torque_reference_iq(torque_ref)
+                # Set new state as 'HOMING' for the state machine.
                 self.grapple_state = "HOMING"
-                
-                
+            case 'GO_OPEN':
+                # Send confirmation message
+                self.get_logger().info('Received command to open GRAPPLE mechanism.')
+                # Check for previous state. Cannot OPEN end effectors without a correctly HOMED position.
+                if self.grapple_state != 'HOME':
+                    self.get_logger().warning("Failed to change mode to 'OPEN' because previous state isn't HOME. ")
+                    return
+                # Set control mode to position. Opening relies on knowing what position the carriage has reached.
+                self.grapple_Solo.set_speed_acceleration_value(100)
+                self.grapple_Solo.set_speed_deceleration_value(100)
+                self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
+                self.gra_motor_control_mode = "POSITION"
+                # Set target position. After performing HOME, OPEN should be at approximately -41500 QP. Using -41000 for testing.
+                self.target_pos = -41000
+                self.grapple_Solo.set_position_reference(self.target_pos)
+                self.grapple_state = 'OPEN'
+            case 'GO_CAPTURE':
+                # Send confirmation message
+                self.get_logger().info('Received command to capture RAFTI.')
+                # Check for previous state. Cannot CAPTURE if end effectors were not OPEN.
+                if self.grapple_state != 'OPEN':
+                    self.get_logger().warning("Failed to change mode to 'CAPTURE' because previous state isn't OPEN. ")
+                    return
+                # Set control mode to velocity. Can consider using position.
+                self.grapple_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
+                self.grapple_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
+                self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE) 
+                self.gra_motor_control_mode = "SPEED"
+                # Set motor spin direction. We want to retract the GRAPPLE carriage, which is done by movin the GRAPPLE motor counterclockwise.
+                self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
+                speed_ref = 4750
+                self.grapple_Solo.set_speed_reference(speed_ref)
+                self.grapple_state = 'CAPTURING'
             case 'GO_RELEASE':
-            
+                # Send confirmation message
+                self.get_logger().info('Received command to release RAFTI.')
+                # Check for previous state. Cannot RELEASE if we haven't CAPTURED anything.
                 if self.grapple_state != 'HARD_DOCK':
-                    # There must be an error. Previous state has to be HOME.
-                    # We should abort
                     self.get_logger().warning("Failed to change mode to 'OPEN' because previous state isn't HARD_DOCK. ")
                     return
-        
-        
-                self.grapple_Solo.set_speed_limit(4750)                         # Desired Speed Limit[RPM].
-                self.grapple_Solo.set_speed_acceleration_value(10)            # Speed acceleration limit[RPM].
-                self.grapple_Solo.set_speed_deceleration_value(10)            # Speed deceleration limit[RPM].
-                
-                print(f"Reading speed_deceleration value:  {self.grapple_Solo.get_speed_deceleration_value()[0]}")            # Speed deceleration limit[RPM].
-                
-                #self.target_pos  = -20000
-                self.target_pos  = -41000   # This would be the open position
+                # Set control mode to position. RELEASING is nearly identical to OPENING.
+                self.grapple_Solo.set_speed_limit(4750)
+                self.grapple_Solo.set_speed_acceleration_value(10)
+                self.grapple_Solo.set_speed_deceleration_value(10)
+                self.target_pos  = -41000
                 self.gra_motor_control_mode = "POSITION"
-                
                 self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
                 self.grapple_Solo.set_position_reference(self.target_pos)
-                
-                self.get_logger().info(f"Commanding now grapple_motor to rotate to position {self.target_pos}")
-                
                 self.grapple_state = 'RELEASE'
-                
-                
+            # Testing and debugging flags
             case 'STOP':
             
                 control_mode, error = self.grapple_Solo.get_control_mode()
@@ -533,7 +512,6 @@ class GRASPNode(Node):
                     print('Asked the motor top STOP by setting SPEED to zero.')
                 
                 self.grapple_state = 'IDLE'
-                
             case 'RESET':
             
                 print('Resetting position to zero:')
@@ -541,150 +519,138 @@ class GRASPNode(Node):
                 self.grapple_Solo.reset_position_to_zero()
                 self.grapple_Solo.set_position_reference(0)
                 self.grapple_state = 'IDLE'
-                
+            # AVC related flags
             case 'GO_AVC_HOMING':
-                print('comanding AVC to perform homing.')
-                
-                # change to torqe mode
-                self.avc_Solo.set_control_mode(solo.ControlMode.SPEED_MODE) 
-                self.avc_motor_control_mode = "SPEED"
-                # Set motor spin direction, we want to close GRASP, which is moving motor in COUNTER CLOCK WISE
-                self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
-                
-                speed_ref = 1000
-                
-                self.avc_Solo.set_speed_reference(speed_ref)
-                self.avc_state = "AVC_HOMING"
-                
+                # Send confirmation message
+                self.get_logger().info('Received command to home AVC mechanism.')
+                # Set control mode to torque. AVC homing done in torque mode.
+                self.avc_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE) 
+                self.avc_motor_control_mode = "TORQUE"
+                # Set motor spin direction. We want to retract AVC carriage, which is done by moving the AVC motor counterclockwise.
+                self.avc_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
+                # Set torque reference current. Homing tested to work at 0.08A. Do NOT increase without consulting PM.
+                torque_ref = 0.08
+                self.avc_Solo.set_torque_reference_iq(torque_ref)
+                # Set new state as 'AVC HOME' for the state machine.
+                self.avc_state = "AVC_HOME"
             case 'GO_POS1':
-                
-                if self.avc_state != 'AVC_HOME':
-                    # There must be an error. Previous state has to be HOME, or motor position is not zero!
-                    # We should abort
-                    self.get_logger().warning("Failed to change mode to 'OPEN' because previous state isn't AVC_HOME. ")
+                # Send confirmation message
+                self.get_logger().info('Received command to send AVC to POS1 (leak check).')
+                # Check for previous state. Cannot proceed to POS1 or beyond without HOMING.
+                if self.avc_state != 'AVC_HOMED':
+                    self.get_logger().warning("Failed to proceed to POS1 as AVC has not been homed.")
                     return
-        
+                # Set control mode to position. AVC operation relies on knowing position data.
                 self.avc_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
                 self.avc_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
-                
                 self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
                 self.avc_motor_control_mode = "POSITION"
-                
-                # Set position reference to -5000.
-                self.target_pos = -1000
-                
-                
-                self.get_logger().info(f"Commanding now avc_motor to rotate to position {self.target_pos}")
+                # Set target position. After performing HOME, POS1 should be at approximately -2790 QP. This includes a 0.6mm increase to account for test results.
+                self.target_pos = -2790
+                self.get_logger().info(f"Commanding AVC motor to target position: {self.target_pos}")
                 self.avc_Solo.set_position_reference(self.target_pos)
-                self.avc_Solo = 'POS1'
-                
-            case 'GO_POS2':
-                
-                if self.avc_state != 'AVC_POS1':
-                    # There must be an error. Previous state has to be HOME, or motor position is not zero!
-                    # We should abort
-                    self.get_logger().warning("Failed to change mode to 'OPEN' because previous state isn't AVC_HOME. ")
-                    return
-        
-                self.avc_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
-                self.avc_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
-                
-                self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
-                self.avc_motor_control_mode = "POSITION"
-                
-                # Set position reference to -5000.
-                self.target_pos = -1500
-                
-                self.get_logger().info(f"Commanding now avc_motor to rotate to position {self.target_pos}")
-                self.avc_Solo.set_position_reference(self.target_pos)
-                self.avc_Solo = 'POS2'
-                
-            
+                self.avc_state = 'POS1'
             case 'GO_POS1.5':
-                if self.avc_state != 'AVC_POS2':
-                    # There must be an error. Previous state has to be HOME, or motor position is not zero!
-                    # We should abort
-                    self.get_logger().warning("Failed to change mode to 'OPEN' because previous state isn't AVC_HOME. ")
-                    return
-        
+                # Send confirmation message
+                self.get_logger().info('Received command to send AVC to POS1.5 (interstitial venting)')
+                # Not checking for previous state right now. Will need to perform tests with caution.
                 self.avc_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
                 self.avc_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
-                
                 self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
                 self.avc_motor_control_mode = "POSITION"
-                
-                # Set position reference to -5000.
-                self.target_pos = -1250
-                
-                self.get_logger().info(f"Commanding now avc_motor to rotate to position {self.target_pos}")
+                # Set target position. POS1.5 should be at approximately -6400 QP. This is from testing conducted by SPF and PM by blowing air through pipes.
+                self.target_pos = -8700 # Found this value on 09/07/2025 testing with new valve core installed.
+                self.get_logger().info(f"Commanding AVC motor to target position: {self.target_pos}")
                 self.avc_Solo.set_position_reference(self.target_pos)
-                self.avc_Solo = 'POS1.5'
+                self.avc_state = 'POS1.5'
+            case 'GO_POS2':
+                # Send confirmation message
+                self.get_logger().info('Received command to send AVC to POS2 (fluid transfer)')
+                # Not checking for previous state right now. Will need to perform tests with caution.
+                self.avc_Solo.set_speed_acceleration_value(100)            # Speed acceleration limit[RPM].
+                self.avc_Solo.set_speed_deceleration_value(100)            # Speed deceleration limit[RPM].
+                self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
+                self.avc_motor_control_mode = "POSITION"
+                # Set target position. POS2 should be at approximately -8546 QP. For the purposes of testing, going -7500 to stay on the safer side as its still open.
+                self.target_pos = -10000 # Found this value on 09/07/2025 testing with new valve core installed
+                self.get_logger().info(f"Commanding AVC motor to target position: {self.target_pos}")
+                self.avc_Solo.set_position_reference(self.target_pos)
+                self.avc_state = 'POS2'
+            case 'AVC_RETURN':
+                # Send confirmation message
+                self.get_logger().info('Received command to send AVC back home.')
+                # Not checking for previous state right now. Will need to perform tests with caution.
+                self.avc_Solo.set_speed_acceleration_value(100)
+                self.avc_Solo.set_speed_deceleration_value(100)
+                self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
+                self.avc_motor_control_mode = 'POSITION'
+                # Set target position. Venting is essentially a return to POS1.5, but we want to go further to ensure ball closed but poppet open. Tested at -4595.
+                self.target_pos = 0
+                self.get_logger().info(f"Commanding AVC motor to target position: {self.target_pos}")
+                self.avc_Solo.set_position_reference(self.target_pos)
+                self.avc_state = 'AVC_RETURNING'
+            case 'AVC_UNSTUCKIFY':
+                # Send confirmation message
+                self.get_logger().info('Good job on getting the AVC stuck.')
+                self.avc_Solo.set_speed_acceleration_value(100)
+                self.avc_Solo.set_speed_deceleration_value(100)
+                self.avc_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
+                self.avc_motor_control_mode = 'POSITION'
+                # Set target position
+                self.current_pos = self.avc_Solo.get_position_counts_feedback()
+                self.target_pos = 2000
+                self.get_logger().info(f"Commanding AVC motor to target position: {self.target_pos}")
+
                 
-    # ============================= State machine code, runs different parts of script based on current state ===============================  
+    # STATE MACHINE CODE
     def GRASP_state_machine(self):
-        # This function manages the state machine of GRASP CONOPS. This function is run in a loop,so that we are always are of which state we
-        
-        #time_0 = time.time()
-        # read data from the motor
-             
+        '''This function manages the state machine of GRASP CONOPS.'''
         self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
         self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
         self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
         self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
 
-        # --------------  Checking GRAPPLE states and calling relevant code. ---------------------------  
-        match self.grapple_state:
-            
-            case "IDLE":
-                # This grapple_state is the first mode we go to when GRASP is booted for the first time
-                state = "0"
+        self.avc_motor_pos_ref, error = self.avc_Solo.get_position_reference()
+        self.avc_motor_pos, error     = self.avc_Solo.get_position_counts_feedback()
+        self.avc_motor_speed, error   = self.avc_Solo.get_speed_feedback()
+        self.avc_motor_current, error = self.avc_Solo.get_quadrature_current_iq_feedback()
 
+        # Checking GRAPPLE states and calling relevant code
+        match self.grapple_state:
+            case "IDLE":
+                '''Default state. No action, awaiting external flags.'''
+                state = "0"
             case "HOMING":
+                '''Active state. GRAPPLE mechanisms moving towards fully retracted position.'''
                 state = "1"
-                # We are moving in this state, we moving in the positive direction (closing arms)
+                # Code to detect HOMING complete.
                 current_threshold = 2
-                print('In MODE HOMING')
-                # Measure 
-                
                 if abs(self.gra_motor_current) > current_threshold:
-                    
-                    #We have reached home, so let's stop the motor from spinning
+                    self.get_logger().info('Current threshold for GRAPPLE homing reached.')
+                    self.get_logger().info('Stopping motor by setting torque reference current to 0.')
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
                     self.gra_motor_control_mode = "TORQUE"
                     self.grapple_Solo.set_torque_reference_iq(0)
-                    print('THRESHOLD HAS BEEN REACHED!!')
-                    print('Asked the motor top STOP by setting TORQUE to zero.')
-                    self.get_logger().info(f"GRAPPLE has reached a current limit! commanded the motor to stop by setting torque to zero.")
-                    time.sleep(0.5)                   #Pausing/waiting some seconds before we reset the position back to zero, because resetting the position is a hard_stop.
-                    
-                    
-                    #Reading again the feedback from motor because we used the pausing feature: time.sleep()
+                    time.sleep(0.5) # Short pause
+                    # Reading feedback from the motor because we used the pausing feature: time.sleep()
                     self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
                     self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
                     self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
                     self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
-                    print('reset home position')
-                    #Resetting position back to zero.
-                    #self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
-                    #self.motor_control_mode = "POSITION"
+                    self.get_logger().info('Setting current position to 0 to complete HOMING')
+                    # Resetting position to 0 QP. Setting state to HOME.
                     self.grapple_Solo.reset_position_to_zero()
                     self.grapple_Solo.set_position_reference(0)
-                    
                     self.grapple_state = 'HOME'
-                    
-                    
             case "HOME":
-                # We do nothing in this state. We are just waiting for the "GO_OPEN" flag to come in
+                # No action, awaiting external flags.
                 state = "2"
-                
             case "OPEN":
+                # No action, awaiting external flags
                 state = "3"
-                # We do nothing in this state. Just waiting for external flag to command 
-                
             case "CAPTURING":
                 
                 current_threshold = 2
-                print('In MODE CAPTURING')
                 # Measure 
                 
                 if abs(self.gra_motor_current) > current_threshold:
@@ -710,19 +676,13 @@ class GRASPNode(Node):
                     self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
                     
                     self.grapple_state = 'HARD_DOCK'
-                    
-                    
             case "HARD_DOCK":
                 state = "5"
                 # We do nothing in this state. Just waiting for external flag to command to Re-open.
-
-                
-                
             case "RELEASE":
                 state = "7"
                 self.get_logger().info('Updating GRASP state to RELEASE')
                 #self.ser.write(state.encode())
-                
             case "MORE":
                 state = "9"
                 self.get_logger().info('Updating GRASP state to MORE')
@@ -731,7 +691,6 @@ class GRASPNode(Node):
                 state = "10"
                 self.get_logger().info('Updating GRASP state to LESS')
                 #self.ser.write(state.encode())
-
             case "FORWARD":
                 state = "12"
                 self.get_logger().info('Updating GRASP state to AVC_FORWARD')
@@ -742,91 +701,45 @@ class GRASPNode(Node):
                 #self.ser.write(state.encode())
             case _: # Catch invalid command 
                 self.get_logger().warning('Unknown GRASP state received')
-        '''   
-        # --------------  Checking AVC states and calling relevant code. ---------------------------  
-        if self.grapple_state == "HARD_DOCK":
-        # If we are in HARD_DOCK, we can run the AVC code
-            self.avc_motor_pos_ref, error = self.avc_Solo.get_position_reference()
-            self.avc_motor_pos, error     = self.avc_Solo.get_position_counts_feedback()
-            self.avc_motor_speed, error   = self.avc_Solo.get_speed_feedback()
-            self.avc_motor_current, error = self.avc_Solo.get_quadrature_current_iq_feedback()
-        
-            match self.avc_state:
-                
-                case "AVC_IDLE":
-                    state = "1"
-                    # We do nothing on this state. just wainting for external flag "GO_AVC_HOME" to be sent.
-                case "AVC_HOMING":
-                    state = "1"
-                    # We are moving in this state, we moving in the positive direction (closing arms)
-                    avc_current_threshold = 0.1
-                    print('In MODE AVC_HOMING')
-                    
-                    # Measure 
-                    
-                    if abs(self.avc_motor_current) > avc_current_threshold:
-                        
-                        #We have reached home, so let's stop the motor from spinning
-                        self.avc_solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
-                        self.avc_motor_control_mode = "TORQUE"
-                        self.avc_solo.set_torque_reference_iq(0)
-                        #self.avc_motor_pos, error     = self.avc_solo.get_position_counts_feedback()
-                        #self.avc_solo.set_position_reference(self.avc_motor_pos)
-                        
-                        
-                        print('THRESHOLD HAS BEEN REACHED!!')
-                        print('Asked the AVC motor top STOP by setting torque to zero.')
-                        self.get_logger().info(f"GRAPPLE has reached a current limit! commanded the motor to stop by setting torque to zero.")
-                        time.sleep(0.5)                   #Pausing/waiting some seconds before we reset the position back to zero, because resetting the position is a hard_stop.
-                        
-                        
-                        #Reading again the feedback from motor because we used the pausing feature: time.sleep()
-                        self.avc_motor_pos_ref, error = self.avc_solo.get_position_reference()
-                        self.avc_motor_pos, error     = self.avc_solo.get_position_counts_feedback()
-                        self.avc_motor_speed, error   = self.avc_solo.get_speed_feedback()
-                        self.avc_motor_current, error = self.avc_solo.get_quadrature_current_iq_feedback()
-                        print('reset AVC home position')
-                        #Resetting position back to zero.
-                        self.avc_solo.reset_position_to_zero()
-                        self.avc_solo.set_position_reference(0)
-                        
-                case "AVC_HOME":
-                    #We do nothing on this state. Just waitnig to receivecommand to go pos1
-                    state = "11"
-                    
-                case "AVC_POS1":
-                    #We do nothing on this state. Just waitnig to receivecommand to go pos1
-                    state = "12"
-                case "AVC_POS1.5":
-                    #We do nothing on this state. Just waitnig to receivecommand to go pos1
-                    state = "13"
-                case "AVC_POS2":
-                    #We do nothing on this state. Just waitnig to receivecommand to go pos1
-                    state = "14"
-        else:
-        # In the else section, we are not in  HARD_DOCK mode
-            self.avc_motor_pos_ref = 0
-            self.avc_motor_pos = 0
-            self.avc_motor_speed = 0
-            self.avc_motor_current = 0.0
-        '''
-        
-        #time_1 = time.time()
+        match self.avc_state:
+            case "AVC_HOME":
+                '''Active state. AVC mechanisms moving towards fully retracted position.'''
+                if abs(self.avc_motor_speed) == 0:
+                    self.get_logger().info('AVC mechanism hit 0 RPM. Perform visual check to confirm homing.')
+                    self.avc_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
+                    self.avc_motor_control_mode = "TORQUE"
+                    self.avc_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
+                    self.get_logger().info('Setting AVC torque reference to 0. Resetting home position.')
+                    self.avc_Solo.set_torque_reference_iq(0)
+                    self.avc_Solo.reset_position_to_zero()
+                    self.avc_Solo.set_position_reference(0)
+                    self.avc_state = 'AVC_HOMED'
+                else:
+                    pass
+            case "AVC_HOMED":
+                self.avc_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
+                self.avc_Solo.set_torque_reference_iq(0)
+                self.avc_Solo.reset_position_to_zero()
+                self.avc_Solo.set_position_reference(0)
+            case "POS1":
+                pass
+            case "POS1.5":
+                pass
+            case "POS2":
+                pass
+            case "AVC_RETURNING":
+                if self.avc_motor_pos > -5:
+                    self.get_logger().info('AVC returned to home position. Changing state to AVC_HOME.')
+                    self.avc_state = 'AVC_HOMED'
+
         # Publish data
         self.publish_data()
-        #time_2 = time.time()
         
-        #print(time_1 - time_0)
-        #print(time_2 - time_1)
-        #print(time_2 - time_0)
-        
-
 def main():
     rclpy.init()
     GRASP_node = GRASPNode()
     rclpy.spin(GRASP_node)
     rclpy.shutdown()
-
     
 if __name__ == '__main__':
     main()
