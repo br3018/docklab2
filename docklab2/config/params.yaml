@@ -22,3 +22,4 @@ GRASP_node:
       speed_limit: [4750, 4000]
       speed_acceleration: [100, 100]
       speed_deceleration: [100, 100]
+      logger_level: [0, 0]
