@@ -8,7 +8,7 @@ GRASP_node:
       baudrate: [937500, 937500]
       pwm_frequency_khz: [20, 20]
       current_limit: [3, 3]
-      motor_poles: [4, 4]
+      motor_poles_counts: [4, 4]
       command_mode: [DIGITAL, DIGITAL]
       motor_type: [BLDC_PMSM, BLDC_PMSM]
       feedback_control_mode: [HALL_SENSORS, HALL_SENSORS]

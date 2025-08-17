@@ -62,6 +62,7 @@ class GRASPNode(Node):
         
         # Initialize motors
         self.get_logger().debug('Initializing motors')
+
         self.grapple_Solo = self.motor_init('grapple')
         self.grapple_state = 'IDLE'
         self.get_logger().info("Grapple set to IDLE")
@@ -72,11 +73,7 @@ class GRASPNode(Node):
         self.avc_state = 'AVC_IDLE'
         self.get_logger().info('AVC set to IDLE')
         self.avc_pos = self.avc_Solo.get_position_counts_feedback()[0]
-        self.gra_motor_control_mode = "POSITION"
-
-        # Initiate grapple and AVC motor drivers
-        self.grapple_Solo = self.grapple_motor_init()        
-        self.avc_Solo = self.avc_motor_init()
+        self.avc_motor_control_mode = "POSITION"
         
         # Set up a function that constantly monitors the state machine
         self.timer = self.create_timer(0.1, self.GRASP_state_machine)
@@ -207,7 +204,7 @@ class GRASPNode(Node):
                     self.get_logger().debug(f"Could not find {name} motor driver over {port}")
                     self.get_logger().debug(f"Disconnecting from {port}")
                     Solo.serial_close()
-                    grapple_connection_successful = False
+                    connection_successful = False
 
         # Setting up motor driver
         # Reset initial position to zero
@@ -236,7 +233,7 @@ class GRASPNode(Node):
         # Log out set values
         self.get_logger().debug(f"""
         {name} motor driver read parameters:\n
-        Grapple Board Temperature: {str(Solo.get_board_temperature()[0])} degrees\n
+        Board Temperature: {str(Solo.get_board_temperature()[0])} degrees\n
         The position controller gains for the {name} motor are:\n
         Kp = {str(Solo.get_position_controller_kp()[0] )}\n
         Ki = {str(Solo.get_position_controller_ki()[0] )}\n
@@ -491,7 +488,7 @@ class GRASPNode(Node):
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
                     self.gra_motor_control_mode = "SPEED"
                     self.grapple_Solo.set_speed_reference(0)
-                    print('Asked the motor top STOP by setting SPEED to zero.')
+                    print('Asked the motor to STOP by setting SPEED to zero.')
                     self.grapple_state = 'IDLE'
                 elif control_mode == solo.ControlMode.TORQUE_MODE:
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
@@ -654,7 +651,7 @@ class GRASPNode(Node):
                     self.gra_motor_control_mode = "SPEED"
                     self.grapple_Solo.set_speed_reference(0)
                     print('THRESHOLD HAS BEEN REACHED!!')
-                    print('Asked the motor top STOP by setting SPEED to zero.')
+                    print('Asked the motor to STOP by setting SPEED to zero.')
                     self.get_logger().info(f"Grapple has reached a current limit! commanded the motor to stop by setting vel to zero.")
                     
                     
