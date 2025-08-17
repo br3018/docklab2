@@ -388,7 +388,7 @@ class GRASPNode(Node):
         #Velocity Feedback
         grapple_motor_vel_msg = Int32()
         grapple_motor_vel_msg.data = self.gra_motor_speed
-        self.pub_gra_motor_pos.publish(grapple_motor_vel_msg)
+        self.pub_gra_motor_vel.publish(grapple_motor_vel_msg)
         
         #Current Phase Iq Feedback
         grapple_current_iq_msg = Float64()
@@ -408,7 +408,7 @@ class GRASPNode(Node):
         #Velocity Feedback
         avc_motor_vel_msg = Int32()
         avc_motor_vel_msg.data = self.avc_motor_speed
-        self.pub_avc_motor_pos.publish(avc_motor_vel_msg)
+        self.pub_avc_motor_vel.publish(avc_motor_vel_msg)
         
         #Current Phase Iq Feedback
         avc_current_iq_msg = Float64()
