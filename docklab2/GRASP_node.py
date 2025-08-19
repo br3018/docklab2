@@ -113,18 +113,6 @@ class GRASPNode(Node):
         self.grapple_state = 'IDLE'
         self.avc_state     = 'AVC_IDLE'
 
-        # To be added still. A lookup table of all the motor position in quadpulses for HOME/OPEN/etc..
-        # LUT with grapple desired positions in quadpulses
-        #self.GRAPPLE_POS_LUT.HOME      = 0
-        #self.GRAPPLE_POS_LUT.HARD_DOCK = 549   # From Rhys numbers we had 549.12   but quadpulses in solo is an Int, we can't have decimals
-        #self.GRAPPLE_POS_LUT.OPEN      = 41020 # From Rhys numbers we had 41020.32 but quadpulses in solo is an Int, we can't have decimals
-        #LETS make sure he numbers are correct
-        #TEMPORARY NUMBERS FOR TESTING
-        #self.GRAPPLE_POS_LUT.HOME      = 0
-        #self.GRAPPLE_POS_LUT.HARD_DOCK = 549   
-        #self.GRAPPLE_POS_LUT.OPEN      = 5000 
-        #self.GRAPPLE_POS_LUT.RELEASE   = 5000 
-
     # Function to find available serial ports
     def find_available_ports(self):
         # Search for available serial devices. 
@@ -499,7 +487,7 @@ class GRASPNode(Node):
                 elif control_mode == solo.ControlMode.TORQUE_MODE:
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
                     self.gra_motor_control_mode = "TORQUE"
-                    self.gcurrent_thresholdet_logger().info(f"TORQUE MODE: Commanding the motor to stop by setting TORQUE to zero.")
+                    self.get_logger().info(f"TORQUE MODE: Commanding the motor to stop by setting TORQUE to zero.")
                     self.grapple_Solo.set_torque_reference_iq(0)
                 else:
                     # Do the same for velocity stop
@@ -678,23 +666,18 @@ class GRASPNode(Node):
             case "RELEASE":
                 state = "7"
                 self.get_logger().info('Updating GRASP state to RELEASE')
-                #self.ser.write(state.encode())
             case "MORE":
                 state = "9"
                 self.get_logger().info('Updating GRASP state to MORE')
-                #self.ser.write(state.encode())
             case "LESS":
                 state = "10"
                 self.get_logger().info('Updating GRASP state to LESS')
-                #self.ser.write(state.encode())
             case "FORWARD":
                 state = "12"
                 self.get_logger().info('Updating GRASP state to AVC_FORWARD')
-                #self.ser.write(state.encode())
             case "BACK":
                 state = "11"
                 self.get_logger().info('Updating GRASP state to AVC_BACK')
-                #self.ser.write(state.encode())
             case _: # Catch invalid command 
                 self.get_logger().warning('Unknown GRASP state received')
         match self.avc_state:
