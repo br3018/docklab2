@@ -19,9 +19,6 @@ import time
 import glob
 from datetime import datetime
 
-# Print a what exactly?
-print(solo.__file__)
-
 # Class definition for GRASP Node
 class GRASPNode(Node):
     # Constructor, initialises motors by calling the init definitions.
@@ -136,7 +133,7 @@ class GRASPNode(Node):
         while ports_found == 0:
             ports_searched = glob.glob('/dev/ttyACM[0-9]*')
             ports_found = len(ports_searched)
-            print('No serial devices found. Awaiting connection.')
+            self.get_logger().debug('No serial devices found. Awaiting connection.')
             time.sleep(1)
         available_ports = []
         for port in ports_searched:
@@ -144,7 +141,7 @@ class GRASPNode(Node):
                 s = serial.Serial(port)
                 s.close()
                 available_ports.append(str(port))
-                print(f"Found a device active on: {port}")
+                self.get_logger().debug(f"Found a device active on: {port}")
             except:
                 pass
         return available_ports
@@ -277,11 +274,11 @@ class GRASPNode(Node):
         
         # Set motor direction
         if velocity_input >= 0:
-            print('The velocity is positive, and we want to go COUNTER CLOCKWISE')
+            self.get_logger().debug('The velocity is positive, and we want to go COUNTER CLOCKWISE')
             direction = solo.Direction.COUNTERCLOCKWISE
             
         else:
-            print('The velocity is negative, and we want to go CLOCKWISE')
+            self.get_logger().debug('The velocity is negative, and we want to go CLOCKWISE')
             direction = solo.Direction.CLOCKWISE
             
         self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
@@ -301,11 +298,11 @@ class GRASPNode(Node):
         
         # Set motor direction
         if torque_input >= 0:
-            print('The torque is positive, so we want to go COUNTER CLOCKWISE')
+            self.get_logger().debug('The torque is positive, so we want to go COUNTER CLOCKWISE')
             # Velocity is positive, so we want to go COUNTERCLOCKWISE
             self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
         else:
-            print('The torque is negative, so we want to go CLOCKWISE')
+            self.get_logger().debug('The torque is negative, so we want to go CLOCKWISE')
             # Velocity is negative, so we want to go CLOCKWISE
             self.grapple_Solo.set_motor_direction(solo.Direction.CLOCKWISE)
         
@@ -333,12 +330,12 @@ class GRASPNode(Node):
         
         #set_motor direction
         if velocity_input >= 0:
-            print('The velocity is positive, and we want to go COUNTER CLOCKWISE')
+            self.get_logger().debug('The velocity is positive, and we want to go COUNTER CLOCKWISE')
             # Velocity is positive, so we want to go COUNTERCLOCKWISE
             direction = solo.Direction.COUNTERCLOCKWISE
             
         else:
-            print('The velocity is negative, and we want to go CLOCKWISE')
+            self.get_logger().debug('The velocity is negative, and we want to go CLOCKWISE')
             # Velocity is negative, so we want to go CLOCKWISE
             direction = solo.Direction.CLOCKWISE
             
@@ -359,11 +356,11 @@ class GRASPNode(Node):
         
         # Set motor direction
         if torque_input >= 0:
-            print('The torque is positive, so we want to go COUNTER CLOCKWISE')
+            self.get_logger().debug('The torque is positive, so we want to go COUNTER CLOCKWISE')
             # Velocity is positive, so we want to go COUNTERCLOCKWISE
             self.avc_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
         else:
-            print('The torque is negative, so we want to go CLOCKWISE')
+            self.get_logger().debug('The torque is negative, so we want to go CLOCKWISE')
             # Velocity is negative, so we want to go CLOCKWISE
             self.avc_Solo.set_motor_direction(solo.Direction.CLOCKWISE)
         
@@ -497,7 +494,7 @@ class GRASPNode(Node):
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
                     self.gra_motor_control_mode = "SPEED"
                     self.grapple_Solo.set_speed_reference(0)
-                    print('Asked the motor to STOP by setting SPEED to zero.')
+                    self.get_logger().info('Asked the motor to STOP by setting SPEED to zero.')
                     self.grapple_state = 'IDLE'
                 elif control_mode == solo.ControlMode.TORQUE_MODE:
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
@@ -509,16 +506,16 @@ class GRASPNode(Node):
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
                     self.gra_motor_control_mode = "SPEED"
                     self.grapple_Solo.set_speed_reference(0)
-                    print('Asked the motor top STOP by setting SPEED to zero.')
+                    self.get_logger.info('Asked the motor to STOP by setting SPEED to zero.')
                 
                 self.grapple_state = 'IDLE'
+
             case 'RESET':
-            
-                print('Resetting position to zero:')
                 self.get_logger().info(f"Resetting position to zero")
                 self.grapple_Solo.reset_position_to_zero()
                 self.grapple_Solo.set_position_reference(0)
                 self.grapple_state = 'IDLE'
+
             # AVC related flags
             case 'GO_AVC_HOMING':
                 # Send confirmation message
@@ -533,6 +530,7 @@ class GRASPNode(Node):
                 self.avc_Solo.set_torque_reference_iq(torque_ref)
                 # Set new state as 'AVC HOME' for the state machine.
                 self.avc_state = "AVC_HOME"
+
             case 'GO_POS1':
                 # Send confirmation message
                 self.get_logger().info('Received command to send AVC to POS1 (leak check).')
@@ -659,8 +657,6 @@ class GRASPNode(Node):
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
                     self.gra_motor_control_mode = "SPEED"
                     self.grapple_Solo.set_speed_reference(0)
-                    print('THRESHOLD HAS BEEN REACHED!!')
-                    print('Asked the motor to STOP by setting SPEED to zero.')
                     self.get_logger().info(f"Grapple has reached a current limit! commanded the motor to stop by setting vel to zero.")
                     
                     
