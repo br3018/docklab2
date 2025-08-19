@@ -22,26 +22,6 @@ from enum import Enum, auto
 # Import Solo Motor Controller Library
 import SoloPy as solo # If solopy is not found in ROS2, need to run this before: 'export PYTHONPATH=/home/labpi/py_env/lib/python3.12/site-packages:$PYTHONPATH'
 
-class GrappleState(Enum):
-    IDLE = auto()
-    HOMING = auto()
-    HOME = auto()
-    OPEN = auto()
-    CAPTURING = auto()
-    HARD_DOCK = auto()
-    RELEASE = auto()
-    MORE = auto()
-    LESS = auto()
-
-class AVCState(Enum):
-    IDLE = auto()
-    HOME = auto()
-    HOMED = auto()
-    POS1 = auto()
-    POS1p5 = auto()
-    POS2 = auto()
-    RETURNING = auto()
-
 # Class definition for GRASP Node
 class GRASPNode(Node):
     # Constructor, initialises motors by calling the init definitions.
@@ -49,6 +29,27 @@ class GRASPNode(Node):
 
         # Set node name 
         super().__init__('GRASP_node')
+
+        # Declaring states for grapple and AVC
+        class GrappleState(Enum):
+            IDLE = auto()
+            HOMING = auto()
+            HOME = auto()
+            OPEN = auto()
+            CAPTURING = auto()
+            HARD_DOCK = auto()
+            RELEASE = auto()
+            MORE = auto()
+            LESS = auto()
+
+        class AVCState(Enum):
+            IDLE = auto()
+            HOME = auto()
+            HOMED = auto()
+            POS1 = auto()
+            POS1p5 = auto()
+            POS2 = auto()
+            RETURNING = auto()
 
         # Declaring parameters
         self.get_logger().debug('Declaring parameters for GRASP_node')
@@ -493,7 +494,7 @@ class GRASPNode(Node):
                     # Do the same for velocity stop
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
                     self.grapple_Solo.set_speed_reference(0)
-                    self.get_logger.info('Asked the motor to STOP by setting SPEED to zero.')
+                    self.get_logger().info('Asked the motor to STOP by setting SPEED to zero.')
                 
                 self.grapple_state = GrappleState.IDLE
 
@@ -620,7 +621,7 @@ class GRASPNode(Node):
                     # Resetting position to 0 QP. Setting state to HOME.
                     self.grapple_Solo.reset_position_to_zero()
                     self.grapple_Solo.set_position_reference(0)
-                    self.grapple_state = 'HOME'
+                    self.grapple_state = GrappleState.HOME
             case GrappleState.HOME:
                 # No action, awaiting external flags.
                 state = "2"
@@ -651,7 +652,7 @@ class GRASPNode(Node):
                     self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
                     self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
                     
-                    self.grapple_state = 'HARD_DOCK'
+                    self.grapple_state = GrappleState.HARD_DOCK
             case GrappleState.HARD_DOCK:
                 state = "5"
                 # We do nothing in this state. Just waiting for external flag to command to Re-open.
