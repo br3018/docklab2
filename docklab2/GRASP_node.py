@@ -442,7 +442,7 @@ class GRASPNode(Node):
 
             # Testing and debugging flags
             case 'STOP':
-                self.get_logger().warn('Received command: STOP. Stopping grapple motor immediately.')
+                self.get_logger().warning('Received command: STOP. Stopping grapple motor immediately.')
                 self.grapple_Solo.emergency_stop()                
                 self.grapple_state = GrappleState.IDLE
                 self.get_logger().info('Changed grapple state to IDLE.')
@@ -656,7 +656,7 @@ class GRASPNode(Node):
                 self.motor_torque_control(self.grapple_Solo, 0)
 
             case _: # Catch invalid command 
-                self.get_logger().error('Unknown GRASP state received', once=True)
+                self.get_logger().error('Unknown GRASP state received')
 
         # Checking AVC states and calling relevant code. Should be extensible to multiple AVCs.
         match self.avc_state:
