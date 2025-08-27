@@ -3,6 +3,7 @@
 # Importing ROS2 Python Client Libraries 
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 
 # Import service type 
 from std_srvs.srv import Trigger
@@ -24,6 +25,7 @@ import SoloPy as solo # If solopy is not found in ROS2, need to run this before:
 
 # Enum classes for Grapple and AVC states
 class GrappleState(Enum):
+    ERROR = auto()
     ABORTING = auto()
     ABORT = auto()
     LAUNCH_LOCKED = auto()
@@ -42,6 +44,7 @@ class GrappleState(Enum):
     RELEASE = auto()
 
 class AVCState(Enum):
+    ERROR = auto()
     LAUNCH_LOCKED = auto()
     IDLE = auto()
     HOMING = auto()
@@ -64,7 +67,7 @@ class AVCState(Enum):
     RETURNING = auto()
     
 
-# Class definition for GRASP Node
+# Class definition for GRASP Nodeavc
 class GRASPNode(Node):
     # Constructor, initialises motors by calling the init definitions.
     def __init__(self):
@@ -109,14 +112,26 @@ class GRASPNode(Node):
         # Initialize motors
         self.get_logger().debug('Initializing motors')
 
-        self.grapple_Solo = self.motor_init('grapple')
-        self.grapple_state = GrappleState.IDLE
-        self.get_logger().info("Grapple set to IDLE")
+        try:
+            self.grapple_Solo = self.motor_init('grapple')
+            self.grapple_state = GrappleState.IDLE
+            self.get_logger().info("Grapple set to IDLE")
+        except Exception as e:
+            self.get_logger().warning(f"Failed to initialize grapple motor: {e}")
+            self.grapple_state = GrappleState.ERROR
+            self.grapple_Solo = None
+            self.get_logger().info("Grapple set to ERROR")
 
-        self.avc_Solo = self.motor_init('avc')
-        self.avc_state = AVCState.IDLE
-        self.get_logger().info('AVC set to IDLE')
-        
+        try:
+            self.avc_Solo = self.motor_init('avc')
+            self.avc_state = AVCState.IDLE
+            self.get_logger().info('AVC set to IDLE')
+        except Exception as e:
+            self.get_logger().warning(f"Failed to initialize AVC motor: {e}")
+            self.avc_state = AVCState.ERROR
+            self.avc_Solo = None
+            self.get_logger().info('AVC set to ERROR')
+
         # Set up a function that constantly monitors the state machine
         self.state_machine_frequency = self.get_parameter('state_machine_params.frequency').get_parameter_value().double_value
         self.timer = self.create_timer(1.0 / self.state_machine_frequency, self.GRASP_state_machine)
@@ -127,25 +142,29 @@ class GRASPNode(Node):
         
         # Add GRASP state subscribers
         self.subscription           = self.create_subscription(String, 'GRASP_flags',                self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
-        self.subscription           = self.create_subscription(Float64,'grapple_motor/position_cmd', self.grapple_motor_position_control,10)
-        self.subscription           = self.create_subscription(Float64,'grapple_motor/velocity_cmd', self.grapple_motor_speed_control,10)
-        self.subscription           = self.create_subscription(Float64,'grapple_motor/torque_cmd',   self.grapple_motor_torque_control,10)
-        self.subscription           = self.create_subscription(Float64,'avc_motor/position_cmd',     self.avc_motor_position_control,10)
-        self.subscription           = self.create_subscription(Float64,'avc_motor/velocity_cmd',     self.avc_motor_speed_control,10)
-        self.subscription           = self.create_subscription(Float64,'avc_motor/torque_cmd',       self.avc_motor_torque_control,10)
+        if self.grapple_state != GrappleState.ERROR:
+            self.subscription           = self.create_subscription(Float64,'grapple_motor/position_cmd', self.grapple_motor_position_control,10)
+            self.subscription           = self.create_subscription(Float64,'grapple_motor/velocity_cmd', self.grapple_motor_speed_control,10)
+            self.subscription           = self.create_subscription(Float64,'grapple_motor/torque_cmd',   self.grapple_motor_torque_control,10)
+        if self.avc_state != AVCState.ERROR:
+            self.subscription           = self.create_subscription(Float64,'avc_motor/position_cmd',     self.avc_motor_position_control,10)
+            self.subscription           = self.create_subscription(Float64,'avc_motor/velocity_cmd',     self.avc_motor_speed_control,10)
+            self.subscription           = self.create_subscription(Float64,'avc_motor/torque_cmd',       self.avc_motor_torque_control,10)
         self.subscription # prevent unused variable error
         
         # Add GRASP publishers
-        self.pub_gra_motor_feedback = self.create_publisher(String,  'gra_motor_feedback', 10)
-        self.pub_gra_motor_curr_iq  = self.create_publisher(Float64, 'gra_motor_current_iq', 10)
-        self.pub_gra_motor_pos      = self.create_publisher(Int32,   'gra_motor_pos', 10)
-        self.pub_gra_motor_vel      = self.create_publisher(Int32,   'gra_motor_vel', 10)
-        self.pub_avc_motor_feedback = self.create_publisher(String,  'avc_motor_feedback', 10)
-        self.pub_avc_motor_curr_iq  = self.create_publisher(Float64, 'avc_motor_current_iq', 10)
-        self.pub_avc_motor_pos      = self.create_publisher(Int32,   'avc_motor_pos', 10)
-        self.pub_avc_motor_vel      = self.create_publisher(Int32,   'avc_motor_vel', 10)
+        if self.grapple_state != GrappleState.ERROR:
+            self.pub_gra_motor_feedback = self.create_publisher(String,  'gra_motor_feedback', 10)
+            self.pub_gra_motor_curr_iq  = self.create_publisher(Float64, 'gra_motor_current_iq', 10)
+            self.pub_gra_motor_pos      = self.create_publisher(Int32,   'gra_motor_pos', 10)
+            self.pub_gra_motor_vel      = self.create_publisher(Int32,   'gra_motor_vel', 10)
+        if self.avc_state != AVCState.ERROR:
+            self.pub_avc_motor_feedback = self.create_publisher(String,  'avc_motor_feedback', 10)
+            self.pub_avc_motor_curr_iq  = self.create_publisher(Float64, 'avc_motor_current_iq', 10)
+            self.pub_avc_motor_pos      = self.create_publisher(Int32,   'avc_motor_pos', 10)
+            self.pub_avc_motor_vel      = self.create_publisher(Int32,   'avc_motor_vel', 10)
         
-        self.get_logger().info('GRASP_node initiated with a periodic state machine, AVC and grapple state set to IDLE.') # Don't we want to set this to IDLE first by default?
+        self.get_logger().info('GRASP_node initiated with a periodic state machine.') 
 
     # Function to find available serial ports
     def find_available_ports(self):
@@ -172,7 +191,7 @@ class GRASPNode(Node):
     # Function for initialising motor
     def motor_init(self, name):
         # Get parameters for initialising motor 
-        self.get_logger().debug(f'Initializing {name} motor driver')
+        self.get_logger().info(f'Initializing {name} motor driver')
         # Get the parameter index for the motor name
         idx = self.get_parameter(f'solo_params.name').get_parameter_value().string_array_value.index(name)
         address = self.get_parameter(f'solo_params.address').get_parameter_value().integer_array_value[idx]
@@ -218,23 +237,26 @@ class GRASPNode(Node):
 
         # Connecting to correct motor driver
         connection_successful = False
-        while connection_successful == False:
-            for port in self.available_ports:
-                self.get_logger().debug(f"Attempting to connect to {name} motor driver over {port}")
-                Solo = solo.SoloMotorControllerUart(port=port, baudrate=soloBaudrate, address=address, loggerLevel=logger_level)
-                read_address = Solo.get_device_address()[0]
-                self.get_logger().debug(f"{port} reads back motor address as {read_address}")
-                if read_address == address:
-                    self.get_logger().info(f"Successfully connected to {name} motor driver over {port}")
-                    connection_successful = True
-                    self.available_ports.remove(port)
-                    break
-                else:
-                    self.get_logger().debug(f"Could not find {name} motor driver over {port}")
-                    self.get_logger().debug(f"Disconnecting from {port}")
-                    Solo.serial_close()
-                    connection_successful = False
+        for port in self.available_ports:
+            self.get_logger().info(f"Attempting to connect to {name} motor driver over {port}")
+            Solo = solo.SoloMotorControllerUart(port=port, baudrate=soloBaudrate, address=address, loggerLevel=logger_level)
+            read_address = Solo.get_device_address()[0]
+            self.get_logger().info(f"{port} reads back motor address as {read_address}")
+            if read_address == address:
+                self.get_logger().info(f"Successfully connected to {name} motor driver over {port}")
+                self.available_ports.remove(port)
+                connection_successful = True
+                break
+            else:
+                self.get_logger().info(f"Could not find {name} motor driver over {port}")
+                self.get_logger().info(f"Disconnecting from {port}")
+                connection_successful = False
+                Solo.serial_close()
 
+        # If motor driver cannot be found throw exception
+        if not connection_successful:
+            raise Exception(f"Could not find {name} motor driver over any available port: {self.available_ports}")
+        
         # Setting up motor driver
         # Reset initial position to zero
         self.get_logger().info(f"Resetting {name} position to zero")
@@ -320,44 +342,46 @@ class GRASPNode(Node):
         # This function publish the data we want to record for external analysis
         
         # ----------------- Grapple data ----------------------------------
-        msg = String()
-        msg.data = f"State: {self.grapple_state.name}, Pos ref: {self.gra_motor_pos_ref}, Pos counts: {self.gra_motor_pos},Speed: {self.gra_motor_speed},Current Iq: {self.gra_motor_current}"
-        self.pub_gra_motor_feedback.publish(msg)
+        if self.grapple_state != GrappleState.ERROR:
+            msg = String()
+            msg.data = f"State: {self.grapple_state.name}"
+            self.pub_gra_motor_feedback.publish(msg)
 
-        #Position Feedback
-        grapple_motor_pos_msg = Int32()
-        grapple_motor_pos_msg.data = self.gra_motor_pos
-        self.pub_gra_motor_pos.publish(grapple_motor_pos_msg)
-        
-        #Velocity Feedback
-        grapple_motor_vel_msg = Int32()
-        grapple_motor_vel_msg.data = self.gra_motor_speed
-        self.pub_gra_motor_vel.publish(grapple_motor_vel_msg)
-        
-        #Current Phase Iq Feedback
-        grapple_current_iq_msg = Float64()
-        grapple_current_iq_msg.data = self.gra_motor_current
-        self.pub_gra_motor_curr_iq.publish(grapple_current_iq_msg)
+            #Position Feedback
+            grapple_motor_pos_msg = Int32()
+            grapple_motor_pos_msg.data = self.gra_motor_pos
+            self.pub_gra_motor_pos.publish(grapple_motor_pos_msg)
+            
+            #Velocity Feedback
+            grapple_motor_vel_msg = Int32()
+            grapple_motor_vel_msg.data = self.gra_motor_speed
+            self.pub_gra_motor_vel.publish(grapple_motor_vel_msg)
+            
+            #Current Phase Iq Feedback
+            grapple_current_iq_msg = Float64()
+            grapple_current_iq_msg.data = self.gra_motor_current
+            self.pub_gra_motor_curr_iq.publish(grapple_current_iq_msg)
         
         # ----------------- AVC data -----------------------------------
-        avc_msg = String()
-        avc_msg.data = f"State: {self.avc_state.name}, Pos ref: {self.avc_motor_pos_ref}, Pos counts: {self.avc_motor_pos},Speed: {self.avc_motor_speed},Current Iq: {self.avc_motor_current}"
-        self.pub_avc_motor_feedback.publish(avc_msg)
+        if self.avc_state != AVCState.ERROR:
+            avc_msg = String()
+            avc_msg.data = f"State: {self.avc_state.name}"
+            self.pub_avc_motor_feedback.publish(avc_msg)
 
-        #Position Feedback
-        avc_motor_pos_msg = Int32()
-        avc_motor_pos_msg.data = self.avc_motor_pos
-        self.pub_avc_motor_pos.publish(avc_motor_pos_msg)
-        
-        #Velocity Feedback
-        avc_motor_vel_msg = Int32()
-        avc_motor_vel_msg.data = self.avc_motor_speed
-        self.pub_avc_motor_vel.publish(avc_motor_vel_msg)
-        
-        #Current Phase Iq Feedback
-        avc_current_iq_msg = Float64()
-        avc_current_iq_msg.data = self.avc_motor_current
-        self.pub_avc_motor_curr_iq.publish(avc_current_iq_msg)
+            #Position Feedback
+            avc_motor_pos_msg = Int32()
+            avc_motor_pos_msg.data = self.avc_motor_pos
+            self.pub_avc_motor_pos.publish(avc_motor_pos_msg)
+            
+            #Velocity Feedback
+            avc_motor_vel_msg = Int32()
+            avc_motor_vel_msg.data = self.avc_motor_speed
+            self.pub_avc_motor_vel.publish(avc_motor_vel_msg)
+            
+            #Current Phase Iq Feedback
+            avc_current_iq_msg = Float64()
+            avc_current_iq_msg.data = self.avc_motor_current
+            self.pub_avc_motor_curr_iq.publish(avc_current_iq_msg)
     
     # Debugging functions to interact directly with grapple motor for position, speed and torque control
     def grapple_motor_position_control(self, msg):
@@ -402,6 +426,9 @@ class GRASPNode(Node):
             case 'GO_HOME':
                 # Send confirmation message
                 self.get_logger().info('Received command: GO_HOME.')
+                if self.grapple_state == GrappleState.ERROR:
+                    self.get_logger().warning("Failed to change grapple mode to 'HOMING' because grapple is in 'ERROR' state. ")
+                    return
                 # Set new state as 'HOMING' for the state machine.
                 self.grapple_state = GrappleState.HOMING
                 self.get_logger().info('Changed grapple state to HOMING.')
@@ -526,29 +553,38 @@ class GRASPNode(Node):
                 self.target_pos = 2000
                 self.get_logger().info(f"Commanding AVC motor to target position: {self.target_pos}")
 
+            case _: # Catch invalid command 
+                self.get_logger().error('Unknown GRASP command received')
+
                 
     # STATE MACHINE CODE
     def GRASP_state_machine(self):
 
         # Get the current state from Solo controllers
-        self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
-        self.gra_motor_speed_ref, error = self.grapple_Solo.get_speed_reference()
-        self.gra_motor_torque_ref, error = self.grapple_Solo.get_torque_reference_iq()
-        self.gra_motor_control_mode, error = self.grapple_Solo.get_control_mode()
-        self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
-        self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
-        self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
+        if self.grapple_state != GrappleState.ERROR:
+            self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
+            self.gra_motor_speed_ref, error = self.grapple_Solo.get_speed_reference()
+            self.gra_motor_torque_ref, error = self.grapple_Solo.get_torque_reference_iq()
+            self.gra_motor_control_mode, error = self.grapple_Solo.get_control_mode()
+            self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
+            self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
+            self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
 
-        self.avc_motor_pos_ref, error = self.avc_Solo.get_position_reference()
-        self.avc_motor_speed_ref, error = self.avc_Solo.get_speed_reference()
-        self.avc_motor_torque_ref, error = self.avc_Solo.get_torque_reference_iq()
-        self.avc_motor_control_mode, error = self.avc_Solo.get_control_mode()
-        self.avc_motor_pos, error     = self.avc_Solo.get_position_counts_feedback()
-        self.avc_motor_speed, error   = self.avc_Solo.get_speed_feedback()
-        self.avc_motor_current, error = self.avc_Solo.get_quadrature_current_iq_feedback()
+        if self.avc_state != AVCState.ERROR:
+            self.avc_motor_pos_ref, error = self.avc_Solo.get_position_reference()
+            self.avc_motor_speed_ref, error = self.avc_Solo.get_speed_reference()
+            self.avc_motor_torque_ref, error = self.avc_Solo.get_torque_reference_iq()
+            self.avc_motor_control_mode, error = self.avc_Solo.get_control_mode()
+            self.avc_motor_pos, error     = self.avc_Solo.get_position_counts_feedback()
+            self.avc_motor_speed, error   = self.avc_Solo.get_speed_feedback()
+            self.avc_motor_current, error = self.avc_Solo.get_quadrature_current_iq_feedback()
 
         # Checking grapple states and calling relevant code
         match self.grapple_state:
+            case GrappleState.ERROR:
+                '''Error state. Grapple mechanisms in error state.'''
+                pass 
+
             case GrappleState.ABORTING:
                 '''Active state. Grapple mechanisms moving to abort position.'''
                 target_pos = -41000 # [QP] Configuration parameter to be added to config file at later date.
@@ -683,6 +719,10 @@ class GRASPNode(Node):
 
         # Checking AVC states and calling relevant code. Should be extensible to multiple AVCs.
         match self.avc_state:
+            case AVCState.ERROR:
+                '''Error state. AVC mechanisms in error state.'''
+                pass
+
             case AVCState.HOME:
                 '''Active state. AVC mechanisms moving towards fully retracted position.'''
                 if abs(self.avc_motor_speed) == 0:
