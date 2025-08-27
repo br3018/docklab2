@@ -43,22 +43,24 @@ class BaseNode(Node):
     def timer_callback(self):
         # Get user input
         print('''Command list: 
-              "ON":         Switch on air bearings
-              "OFF":        Switch off air bearings
-              "HOME":       Home GRAPPLE and AVC
-              "OPEN":       Extend end effectors of GRAPPLE mechanism
-              "DOCK":       Run docking procedure, begin recording to a rosbag
-              "POS1":       Send AVC to POS1 for leak check
-              "FLOW_ON":    Open flow valve on ABP1
-              "FLOW_OFF":   Close flow valve on ABP1
-              "VENT_ON":    Open vent valve on ABP1
-              "VENT_OFF":   Close vent valve on ABP1
-              "POS2":       Send AVC to POS2 for fluid transfer
-              "POS1.5":     Send AVC to POS1.5 for interstitial venting
-              "AVC_RETURN": Send AVC back to home position
-                            (Must run HOME, POS1, HOME again for best accuracy)
-              "UNDOCK":     Run undocking procedure, begin recording to a rosbag
-              "RECORD":     Record all topics to a rosbag
+              "ON":           Switch on air bearings
+              "OFF":          Switch off air bearings
+              "HOME":         Home GRAPPLE and AVC
+              "OPEN":         Extend end effectors of GRAPPLE mechanism
+              "DOCK":         Run docking procedure, begin recording to a rosbag
+              "POS1":         Send AVC to POS1 for leak check
+              "FLOW_ON":      Open flow valve on ABP1
+              "FLOW_OFF":     Close flow valve on ABP1
+              "VENT_ON":      Open vent valve on ABP1
+              "VENT_OFF":     Close vent valve on ABP1
+              "POS2":         Send AVC to POS2 for fluid transfer
+              "POS1.5":       Send AVC to POS1.5 for interstitial venting
+              "AVC_RETURN":   Send AVC back to home position
+                              (Must run HOME, POS1, HOME again for best accuracy)
+              "UNDOCK":       Run undocking procedure, begin recording to a rosbag
+              "RECORD":       Record all topics to a rosbag
+              "STOP":         Emergency stop for grapple motor
+              "AVC_UNSTUCKIFY": Unstuck the AVC mechanism
               ''')
         user_input = input('Enter command: ')
         # Process user input
@@ -90,10 +92,6 @@ class BaseNode(Node):
                 msg = String()
                 msg.data = 'GO_HOME'
                 self.abp1_GRASP_pub_.publish(msg)
-                time.sleep(50)
-                msg = String()
-                msg.data = 'GO_AVC_HOMING'
-                self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(10)
             case 'OPEN':
                 time.sleep(1) # Wait for serial connection to establish
@@ -115,7 +113,7 @@ class BaseNode(Node):
                 self.abp1_airb_req.data = True
                 self.abp1_airb_cli_.call_async(self.abp1_airb_req)
                 # Start GRASP
-                self.abp1_GRASP_pub_.publish(String(data='GO_CAPTURE'))
+                self.abp1_GRASP_pub_.publish(String(data='GO_DOCK'))
                 # Delay whilst docking procedure runs
                 time.sleep(60)
                 # Stop air bearings
@@ -191,6 +189,20 @@ class BaseNode(Node):
                 # Send Ctrl+C to the subprocess to terminate it gracefully
                 self.bagprocess.send_signal(subprocess.signal.SIGINT)
                 self.bagprocess.wait()
+
+            case 'STOP':
+                time.sleep(1) # Wait for serial communication to establish
+                msg = String()
+                msg.data = 'STOP'
+                self.abp1_GRASP_pub_.publish(msg)
+                print('Emergency stop command sent to grapple motor')
+                
+            case 'AVC_UNSTUCKIFY':
+                time.sleep(1) # Wait for serial communication to establish
+                msg = String()
+                msg.data = 'AVC_UNSTUCKIFY'
+                self.abp1_GRASP_pub_.publish(msg)
+                print('AVC unstuckify command sent')
 
             case default:
                 print('Invalid command')
