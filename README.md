@@ -1,17 +1,18 @@
 # docklab2
 Code for running Docklab 2 at OFL
 
-## Setup instructions: 
- - Use Raspberry Pi imager to install Ubuntu desktop 24.04.01 LTS (64 bit)
+## Setup instructions for air bearing platforms: 
+ - Use Raspberry Pi imager to install Ubuntu desktop 24.04.01 LTS (64 bit) for ROS 2 Jazzy or Ubuntu 22.04.5 LTS (64 bit) for ROS 2 Humble
  - Set hostname "abpX" (where X is a unique identifier below) for air bearing platforms. Use "base" for the hub and "ejection" for the ejection mechanism
    - X = "1": Servicer
    - X = "2": Client
  - Set username and password:
-   - username: labpi
+   - username: labpi (for Raspberry Pi)
+   - username: labpc (for desktop)
    - password: XXXXXXXXXXXXX
  - Set computer name to be the same as hostname
  - Configure wireless LAN for Docklab 2 travel router
- - Install ROS 2 Jazzy Jalisco following ROS 2 documentation here: https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html#id4
+ - Install ROS 2 Jazzy Jalisco or ROS 2 Humble following ROS 2 documentation here: https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html#id4 or here https://docs.ros.org/en/humble/Installation.html
  - Install github if not installed already following guide here: https://gist.github.com/derhuerst/1b15ff4652a867391f03#file-linux-md
  - Create ROS 2 workspace in home directory using "mkdir -p ~/docklab2_ws/src"
  - Navigate to /docklab2_ws/src and clone docklab2 repository into folder
@@ -50,23 +51,25 @@ YYYYYYYY is the password for the router
 
  - Setup ssh using "sudo apt install openssh-server"
 
-# Python Setup Instructions
+# Python Setup Instructions Ubuntu 24
+ - Ubuntu 24.04.01 LTS requires packages to be managed in a virtual environment with pip
+ - Ubuntu 22.04.5 LTS does not require virtual environments for the pip package manager to work
+ - When working with Ubuntu 24, follow the following instructions for setting up the virtual environment and ensure any new packages are installed in the same environment
  - Install venv for python3 by running "sudo apt install python3.12-venv"
  - Create virtual environment for running python in home directory called "py_env" by running "python3 -m venv py_env"
+  - Add "source py_env/bin/activate" to .bashrc file in home directory to source python environment on start up of the terminal 
 
 # Bashrc setup 
- - Add "source /opt/ros/jazzy/setup.bash" to .bashrc file in home directory to source ROS on start up of the terminal
- - Add "source py_env/bin/activate" to .bashrc file in home directory to source python environment on start up of the terminal 
+ - Add "source /opt/ros/jazzy/setup.bash" for ROS 2 Jazzy or "source /opt/ros/humble/setup.bash" to .bashrc file in home directory to source ROS 2 on start up of the terminal
  
 # Serial setup instructions
  - To enable using serial ports add user to dialout group as below:
  """
-sudo apt install rpi.gpio-common
 sudo adduser "${USER}" dialout
 sudo reboot
 
-# GPIO setup instructions
-  - To enable using GPIO over ssh add user to dialout group as below:
+# Raspberry Pi GPIO setup instructions
+  - To enable using GPIO over ssh add user to dialout group as before, install the Raspberry Pi gpio packages:
 """
 sudo apt install rpi.gpio-common
 sudo adduser "${USER}" dialout
@@ -79,8 +82,8 @@ sudo reboot
 
 # LabJack Setup Instructions
  - Follow instructions for downloading LabJack for python here: https://support.labjack.com/docs/python-for-ljm-windows-mac-linux
-    - Install AArch64 installer for LabJack LJM Library from here: https://files.labjack.com/installers/LJM/Linux/AArch64/beta/LabJack-LJM_2025-01-10.zip (see INSTALL.md for instructions)
-    - Install labjack-ljm to py_env environment using "pip install labjack-ljm" (make sure py_env environment is active during this step)
+    - For Raspberry Pi, install AArch64 installer for LabJack LJM Library from here: https://files.labjack.com/installers/LJM/Linux/AArch64/beta/LabJack-LJM_2025-01-10.zip (see INSTALL.md for instructions)
+    - Install labjack-ljm to py_env environment using "pip install labjack-ljm" 
 
 # Mocap Setup Instructions
 - Connect base station to mocap laptop over ethernet or wireless connection.
