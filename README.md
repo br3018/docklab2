@@ -86,19 +86,44 @@ sudo reboot
     - Install labjack-ljm to py_env environment using "pip install labjack-ljm" 
 
 # Mocap Setup Instructions
+
+## Network setup
+
+- Connect mocap laptop and base station over the same network (wired preferred)
+- Configure static IP address on mocap laptop. 
+  - Set IP assignment to manual 
+  - Set IPv4 address to what you want (192.168.1.61 used for ISAM facility testing)
+  - Set subnet mask to 255.255.255.0 (most cases using IPv4 this does not need to be different)
+  - Leave default gateway empty
+- Configure static IP address on base station.
+  - Set IPv4 method to manual
+  - Set IPv4 address to what you want (192.168.1.60 used for ISAM facility testing)
+  - Set subnet mask to 255.255.255.0 (see above note)
+  - Leave default gateway empty
+
+## Software setup
+
 - To install motion capture packages into the workspace follow instructions linked below:
 https://github.com/br3018/mocap4ros2_optitrack
 - Connect base station to mocap laptop over ethernet or wireless connection.
   - If connecting wirelessly be aware latency can be high
 - Launch and setup motive performing calibrations as necessary 
 - Set motive to unicast with local interface of mocap laptop on shared network with base station
+- Assign GRASP asset streaming ID of 1 and RAFTI asset streaming ID of 2
 - On base station, setup optitrack configuration at docklab2_ws/src/mocap4ros2_optitrack/mocap4r2_optitrack_driver/config/mocap4r2_optitrack_driver_params.yaml
   - Set server address as mocap laptop IP address on shared network
   - Set local address as base station IP address on shared network
   - Set other parameters to be the same as in the motive streaming menu where available
   - Do not change any other parameters
  
-- To launch the optitrack system connection follow the instructions in the github repository
+- To launch the optitrack system connection follow the instructions in the github repository to launch each node manually or use:
+"""
+ros2 launch mocap-transforms optitrack_bringup.launch.py
+"""
+In a seperate terminal: 
+"""
+ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
+"""
 - Successful launch will display the below:
 """
 [mocap4r2_optitrack_driver_main-1] [INFO] [1750870175.394628061] [mocap4r2_optitrack_driver_node]: Trying to connect to Optitrack NatNET SDK at 192.168.0.100 ...
