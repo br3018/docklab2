@@ -795,7 +795,7 @@ class GRASPNode(Node):
 
             case GrappleState.OPENING:
                 '''Active state. Grapple mechanisms moving to open position.'''
-                target_pos = 3600 # [QP] Configuration parameter to be added to config file at later date.
+                target_pos = 3900 # [QP] Configuration parameter to be added to config file at later date.
                 if self.gra_motor_pos_ref != target_pos or self.gra_motor_control_mode != solo.ControlMode.POSITION_MODE:
                     self.motor_position_control(self.grapple_Solo, target_pos)
                 # State exit condition
