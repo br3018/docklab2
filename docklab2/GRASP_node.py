@@ -195,20 +195,7 @@ class GRASPNode(Node):
 
         # Add GRASP state subscribers
         self.subscription           = self.create_subscription(String, 'GRASP_flags', self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
-        if self.grapple_state != GrappleState.ERROR:
-            self.subscription           = self.create_subscription(Float64,'grapple_motor/position_cmd', self.grapple_motor_position_control,10)
-            self.subscription           = self.create_subscription(Float64,'grapple_motor/velocity_cmd', self.grapple_motor_speed_control,10)
-            self.subscription           = self.create_subscription(Float64,'grapple_motor/torque_cmd',   self.grapple_motor_torque_control,10)
-        if self.avc_a_state != AVCState.ERROR:
-            self.subscription           = self.create_subscription(Float64,'avc_a_motor/position_cmd',     self.avc_a_motor_position_control,10)
-            self.subscription           = self.create_subscription(Float64,'avc_a_motor/velocity_cmd',     self.avc_a_motor_speed_control,10)
-            self.subscription           = self.create_subscription(Float64,'avc_a_motor/torque_cmd',       self.avc_a_motor_torque_control,10)
-        if self.avc_b_state != AVCState.ERROR:
-            self.subscription           = self.create_subscription(Float64,'avc_b_motor/position_cmd',     self.avc_b_motor_position_control,10)
-            self.subscription           = self.create_subscription(Float64,'avc_b_motor/velocity_cmd',     self.avc_b_motor_speed_control,10)
-            self.subscription           = self.create_subscription(Float64,'avc_b_motor/torque_cmd',       self.avc_b_motor_torque_control,10)
 
-        self.subscription # prevent unused variable error
         
         # Add GRASP publishers
         if self.grapple_state != GrappleState.ERROR:
@@ -500,68 +487,6 @@ class GRASPNode(Node):
             avc_current_iq_msg = Float64()
             avc_current_iq_msg.data = self.avc_b_motor_current
             self.pub_avc_b_motor_curr_iq.publish(avc_current_iq_msg)
-    
-    # Debugging functions to interact directly with grapple motor for position, speed and torque control
-    def grapple_motor_position_control(self, msg):
-        """
-        Callback for grapple motor position command subscription.
-        Args:
-            msg (Float64): ROS message containing position command.
-        """
-        self.get_logger().info(f"Received grapple position command: {msg.data}")
-        self.motor_position_control(self.grapple_Solo, msg.data)
-        return
-
-    def grapple_motor_speed_control(self, msg):
-        """
-        Callback for grapple motor speed command subscription.
-        Args:
-            msg (Float64): ROS message containing speed command.
-        """
-        self.get_logger().info(f"Received grapple speed command: {msg.data}")
-        self.motor_speed_control(self.grapple_Solo, msg.data)
-        return
-    
-    def grapple_motor_torque_control(self, msg):
-        """
-        Callback for grapple motor torque command subscription.
-        Args:
-            msg (Float64): ROS message containing torque command.
-        """
-        self.get_logger().info(f"Received grapple torque command: {msg.data}")
-        self.motor_torque_control(self.grapple_Solo, msg.data)
-        return
-        
-    # Debugging functions to interact directly with AVC motor for position, speed and torque control
-    def avc_motor_position_control(self, msg):
-        """
-        Callback for AVC motor position command subscription.
-        Args:
-            msg (Float64): ROS message containing position command.
-        """
-        self.get_logger().info(f"Received AVC position command: {msg.data}")
-        self.motor_position_control(self.avc_Solo, msg.data)
-        return
-    
-    def avc_motor_speed_control(self, msg):
-        """
-        Callback for AVC motor speed command subscription.
-        Args:
-            msg (Float64): ROS message containing speed command.
-        """
-        self.get_logger().info(f"Received AVC speed command: {msg.data}")
-        self.motor_speed_control(self.avc_Solo, msg.data)
-        return
-    
-    def avc_motor_torque_control(self, msg):
-        """
-        Callback for AVC motor torque command subscription.
-        Args:
-            msg (Float64): ROS message containing torque command.
-        """
-        self.get_logger().info(f"Received AVC torque command: {msg.data}")
-        self.motor_torque_control(self.avc_Solo, msg.data)
-        return
         
     # EXTERNAL FLAG MANAGEMENT  
     def GRASP_external_flags(self, msg):
