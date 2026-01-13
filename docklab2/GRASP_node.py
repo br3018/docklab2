@@ -18,6 +18,7 @@ import serial
 import time
 import glob
 from datetime import datetime
+from abc import ABC, abstractmethod
 from enum import Enum, auto
 
 # Import Solo Motor Controller Library
@@ -92,6 +93,626 @@ class AVCState(Enum):
     POS1p5 = auto()
     POS2 = auto()
 
+# Define base mechanism controller class
+class MechanismController(ABC):
+    """
+    Base class for motor-driven mechanism controllers.
+    
+    Provides common functionality for:
+    - Motor initialization and configuration
+    - Control mode management (position, speed, torque)
+    - Feedback reading (position, speed, current)
+    - State management
+    
+    Subclasses must implement state-specific movement methods.
+    """
+    
+    def __init__(self, name: str, motor_params: dict, logger, available_ports: list):
+        """
+        Initialize the mechanism controller.
+        
+        Args:
+            name: Name of the mechanism (e.g., 'grapple', 'avc_a', 'avc_b')
+            motor_params: Dictionary containing all motor configuration parameters
+            logger: ROS logger instance for logging
+            available_ports: List of available serial ports to search
+        """
+        self.name = name
+        self.logger = logger
+        self.motor_params = motor_params
+        self._state = None
+        self._homed = False
+        self._solo = None
+        
+        # Motor feedback variables
+        self.position = 0
+        self.speed = 0
+        self.current = 0
+        self.position_ref = 0
+        self.speed_ref = 0
+        self.torque_ref = 0.0
+        self.control_mode = None
+        
+        # Initialize the motor
+        try:
+            self._solo = self._initialize_motor(available_ports)
+            self._state = self._get_initial_state()
+            self.logger.info(f"{self.name} initialized successfully in {self._state.name} state")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize {self.name} motor: {e}")
+            self._state = self._get_error_state()
+            self._solo = None
+    
+    @abstractmethod
+    def _get_initial_state(self):
+        """Return the initial state for this mechanism type."""
+        pass
+    
+    @abstractmethod
+    def _get_error_state(self):
+        """Return the error state for this mechanism type."""
+        pass
+    
+    def _initialize_motor(self, available_ports: list):
+        """
+        Initialize and configure the Solo motor controller.
+        
+        Args:
+            available_ports: List of available serial ports
+            
+        Returns:
+            SoloMotorControllerUart: Configured motor controller instance
+            
+        Raises:
+            Exception: If motor cannot be found or initialized
+        """
+        params = self.motor_params
+        
+        # Parse baudrate
+        if params['baudrate'] == 937500:
+            solo_baudrate = solo.UartBaudRate.RATE_937500
+        else:
+            raise ValueError(f"Unsupported baudrate: {params['baudrate']}")
+        
+        # Parse enums
+        command_mode_map = {'DIGITAL': solo.CommandMode.DIGITAL}
+        motor_type_map = {'BLDC_PMSM': solo.MotorType.BLDC_PMSM}
+        feedback_control_mode_map = {'HALL_SENSORS': solo.FeedbackControlMode.HALL_SENSORS}
+        control_mode_map = {'POSITION_MODE': solo.ControlMode.POSITION_MODE}
+        
+        command_mode = command_mode_map.get(params['command_mode'])
+        motor_type = motor_type_map.get(params['motor_type'])
+        feedback_control_mode = feedback_control_mode_map.get(params['feedback_control_mode'])
+        control_mode = control_mode_map.get(params['control_mode'])
+        
+        if not all([command_mode, motor_type, feedback_control_mode, control_mode]):
+            raise ValueError(f"Invalid motor configuration parameters for {self.name}")
+        
+        # Connect to motor driver
+        self.logger.info(f"Attempting to connect to {self.name} motor driver")
+        solo_controller = None
+        connected_port = None
+        
+        for port in available_ports:
+            self.logger.debug(f"Trying port {port}")
+            try:
+                solo_controller = solo.SoloMotorControllerUart(
+                    port=port,
+                    baudrate=solo_baudrate,
+                    address=params['address'],
+                    loggerLevel=params['logger_level']
+                )
+                
+                read_address = solo_controller.get_device_address()[0]
+                self.logger.debug(f"{port} reads back address {read_address}")
+                
+                if read_address == params['address']:
+                    connected_port = port
+                    self.logger.info(f"Connected to {self.name} motor on {port}")
+                    break
+                else:
+                    solo_controller.serial_close()
+                    
+            except Exception as e:
+                self.logger.debug(f"Failed to connect on {port}: {e}")
+                continue
+        
+        if not solo_controller or not connected_port:
+            raise Exception(f"Could not find {self.name} motor on any available port")
+        
+        # Remove used port from available list
+        available_ports.remove(connected_port)
+        
+        # Configure motor parameters
+        self.logger.debug(f"Configuring {self.name} motor parameters")
+        solo_controller.reset_position_to_zero()
+        solo_controller.set_output_pwm_frequency_khz(params['pwm_frequency_khz'])
+        solo_controller.set_current_limit(params['current_limit'])
+        solo_controller.set_motor_poles_counts(params['motor_poles_counts'])
+        solo_controller.set_command_mode(command_mode)
+        solo_controller.set_motor_type(motor_type)
+        solo_controller.set_feedback_control_mode(feedback_control_mode)
+        solo_controller.set_current_controller_kp(params['current_controller_kp'])
+        solo_controller.set_current_controller_ki(params['current_controller_ki'])
+        solo_controller.set_speed_controller_kp(params['speed_controller_kp'])
+        solo_controller.set_speed_controller_ki(params['speed_controller_ki'])
+        solo_controller.set_position_controller_kp(params['position_controller_kp'])
+        solo_controller.set_position_controller_ki(params['position_controller_ki'])
+        solo_controller.set_control_mode(control_mode)
+        solo_controller.set_speed_limit(params['speed_limit'])
+        solo_controller.set_speed_acceleration_value(params['speed_acceleration'])
+        solo_controller.set_speed_deceleration_value(params['speed_deceleration'])
+        
+        self.logger.info(f"{self.name} motor configured successfully")
+        return solo_controller
+    
+    def update_feedback(self):
+        """
+        Read current feedback values from the motor controller.
+        Updates position, speed, current, and reference values.
+        """
+        if self._solo is None:
+            return
+        
+        try:
+            self.position_ref, _ = self._solo.get_position_reference()
+            self.speed_ref, _ = self._solo.get_speed_reference()
+            self.torque_ref, _ = self._solo.get_torque_reference_iq()
+            self.control_mode, _ = self._solo.get_control_mode()
+            self.position, _ = self._solo.get_position_counts_feedback()
+            self.speed, _ = self._solo.get_speed_feedback()
+            self.current, _ = self._solo.get_quadrature_current_iq_feedback()
+        except Exception as e:
+            self.logger.error(f"Error reading feedback from {self.name}: {e}")
+    
+    def position_control(self, position_reference: float):
+        """
+        Command the motor to a specific position using position control mode.
+        
+        Args:
+            position_reference: Target position in encoder counts
+        """
+        if self._solo is None:
+            return
+        
+        self.logger.debug(f"{self.name}: Changing motor to position mode control and setting position reference {position_reference}")
+        self._solo.set_control_mode(solo.ControlMode.POSITION_MODE)
+        self._solo.set_position_reference(position_reference)
+    
+    def speed_control(self, speed_reference: float):
+        """
+        Command the motor to a specific speed using speed control mode.
+        
+        Args:
+            speed_reference: Target speed in RPM (negative for clockwise)
+        """
+        if self._solo is None:
+            return
+        
+        self._solo.set_control_mode(solo.ControlMode.SPEED_MODE)
+        
+        if speed_reference < 0:
+            self._solo.set_motor_direction(solo.Direction.CLOCKWISE)
+            self.logger.debug(f"{self.name}: Changing motor to speed mode control and setting speed reference {speed_reference} RPM (CW)")
+        else:
+            self._solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
+            self.logger.debug(f"{self.name}: Changing motor to speed mode control and setting speed reference {speed_reference} RPM (CCW)")
+
+        speed_reference = abs(speed_reference)
+        self._solo.set_speed_reference(speed_reference)
+    
+    def torque_control(self, torque_reference: float):
+        """
+        Command the motor to a specific torque using torque control mode.
+        
+        Args:
+            torque_reference: Target torque in Amperes (negative for clockwise)
+        """
+        if self._solo is None:
+            return
+        
+        self._solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
+        
+        if torque_reference < 0:
+            self._solo.set_motor_direction(solo.Direction.CLOCKWISE)
+            torque_reference = abs(torque_reference)
+            self.logger.debug(f"{self.name}: Changing motor to torque mode control and setting torque reference {torque_reference} A (CW)")
+        else:
+            self._solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
+            self.logger.debug(f"{self.name}: Changing motor to torque mode control and setting torque reference {torque_reference} A (CCW)")
+
+        self._solo.set_torque_reference_iq(torque_reference)
+    
+    def reset_position(self):
+        """Reset the motor position counter to zero."""
+        if self._solo is None:
+            return
+        
+        self._solo.reset_position_to_zero()
+        self._solo.set_position_reference(0)
+        self.logger.debug(f"{self.name}: Position reset to zero")
+    
+    def get_state(self):
+        """Get the current state of the mechanism."""
+        return self._state
+
+    def is_homed(self) -> bool:
+        """Check if the mechanism has been homed."""
+        return self._homed
+    
+    def is_error(self) -> bool:
+        """Check if the mechanism is in an error state."""
+        return self._solo is None
+    
+class GrappleController(MechanismController):
+    """
+    Controller for the grapple mechanism.
+
+    Manages states: HOME, FREE_FLIGHT, OPEN, SOFT_DOCK, HARD_DOCK, CLEARANCE
+    Provides methods for homing and moving between operational states.
+    """
+    
+    # Configuration constants (should be loaded from config file in production)
+    HOME_CURRENT_TARGET = -0.7  # [A]
+    OPEN_POSITION_TARGET = 3900  # [QP]
+    SOFT_DOCK_POSITION_THRESHOLD = 3173  # [QP]
+    HARD_DOCK_CURRENT_TARGET = -0.7  # [A]
+    CLEARANCE_POSITION_TARGET = 3600  # [QP]
+    SOFT_DOCK_SPEED_TARGET = -2000  # [QPS]
+    
+    def __init__(self, motor_params: dict, logger, available_ports: list):
+        """
+        Initialize the grapple controller.
+        
+        Args:
+            motor_params: Motor configuration parameters
+            logger: ROS logger instance
+            available_ports: List of available serial ports
+        """
+        super().__init__('grapple', motor_params, logger, available_ports)
+    
+    def _get_initial_state(self):
+        """Return the initial state for grapple mechanism."""
+        return GrappleState.UNCONTROLLED
+    
+    def _get_error_state(self):
+        """Return the error state for grapple mechanism."""
+        return GrappleState.ERROR
+    
+    def home(self) -> bool:
+        """
+        Move the grapple mechanism to HOME position using current control.
+        
+        Returns:
+            bool: True if homing is complete, False if still in progress
+        """
+        if self._state == GrappleState.HOME:
+            return True
+        
+        if self._state == GrappleState.ERROR:
+            self.logger.warning("Cannot home grapple: in ERROR state")
+            return False
+        
+        # Apply homing current if not already set
+        if self.torque_ref != self.HOME_CURRENT_TARGET or \
+           self.control_mode != solo.ControlMode.TORQUE_MODE:
+            self.torque_control(self.HOME_CURRENT_TARGET)
+            return False
+        
+        # Check if homing is complete (current reached and motor stopped)
+        if abs(self.current) >= abs(self.HOME_CURRENT_TARGET) and self.speed == 0:
+            self.logger.debug("Grapple homing current target reached")
+            self.torque_control(0)
+            self.reset_position()
+            self._state = GrappleState.HOME
+            self._homed = True
+            self.logger.info("Grapple reached HOME state")
+            return True
+        
+        return False
+    
+    def free_flight(self):
+        """
+        Move the grapple mechanism to FREE_FLIGHT state.
+        
+        Note: Implementation not yet defined. Placeholder for future development.
+        """
+        if self._state == GrappleState.ERROR:
+            self.logger.warning("Cannot move to FREE_FLIGHT: in ERROR state")
+            return
+        
+        # TODO: Implement FREE_FLIGHT movement logic
+        self._state = GrappleState.FREE_FLIGHT
+        self.logger.info("Grapple moved to FREE_FLIGHT state")
+    
+    def open(self) -> bool:
+        """
+        Move the grapple mechanism to OPEN position.
+        
+        Returns:
+            bool: True if opening is complete, False if still in progress
+        """
+        if self._state == GrappleState.OPEN:
+            return True
+        
+        if self._state == GrappleState.ERROR:
+            self.logger.warning("Cannot open grapple: in ERROR state")
+            return False
+        
+        # Command position if not already set
+        if self.position_ref != self.OPEN_POSITION_TARGET or \
+           self.control_mode != solo.ControlMode.POSITION_MODE:
+            self.position_control(self.OPEN_POSITION_TARGET)
+            return False
+        
+        # Check if target reached
+        if self.position >= self.OPEN_POSITION_TARGET:
+            self.logger.debug("Grapple opening position target reached")
+            self.torque_control(0)
+            self._state = GrappleState.OPEN
+            self.logger.info("Grapple reached OPEN state")
+            return True
+        
+        return False
+    
+    def soft_dock(self) -> bool:
+        """
+        Move the grapple mechanism to SOFT_DOCK position using speed control.
+        
+        Returns:
+            bool: True if soft docking is complete, False if still in progress
+        """
+        if self._state == GrappleState.SOFT_DOCK:
+            return True
+        
+        if self._state == GrappleState.ERROR:
+            self.logger.warning("Cannot soft dock: in ERROR state")
+            return False
+        
+        # Apply speed control if not already set
+        if self.speed_ref != self.SOFT_DOCK_SPEED_TARGET or \
+           self.control_mode != solo.ControlMode.SPEED_MODE:
+            self.speed_control(self.SOFT_DOCK_SPEED_TARGET)
+            return False
+        
+        # Check if soft dock position reached
+        if self.position <= self.SOFT_DOCK_POSITION_THRESHOLD:
+            self.logger.debug("Grapple soft dock position reached")
+            self._state = GrappleState.SOFT_DOCK
+            self.logger.info("Grapple reached SOFT_DOCK state")
+            return True
+        
+        return False
+    
+    def hard_dock(self) -> bool:
+        """
+        Move the grapple mechanism to HARD_DOCK position using current control.
+        
+        Returns:
+            bool: True if hard docking is complete, False if still in progress
+        """
+        if self._state == GrappleState.HARD_DOCK:
+            return True
+        
+        if self._state == GrappleState.ERROR:
+            self.logger.warning("Cannot hard dock: in ERROR state")
+            return False
+        
+        # Apply hard docking current if not already set
+        if self.torque_ref != self.HARD_DOCK_CURRENT_TARGET or \
+           self.control_mode != solo.ControlMode.TORQUE_MODE:
+            self.torque_control(self.HARD_DOCK_CURRENT_TARGET)
+            return False
+        
+        # Check if hard docking is complete
+        if abs(self.current) >= abs(self.HARD_DOCK_CURRENT_TARGET) and self.speed == 0:
+            self.logger.debug("Grapple hard dock current target reached")
+            self.torque_control(0)  # May need to maintain force - to be tested
+            self._state = GrappleState.HARD_DOCK
+            self.logger.info("Grapple reached HARD_DOCK state")
+            return True
+        
+        return False
+    
+    def clearance(self) -> bool:
+        """
+        Move the grapple mechanism to CLEARANCE position (release).
+        
+        Returns:
+            bool: True if clearance is complete, False if still in progress
+        """
+        if self._state == GrappleState.CLEARANCE:
+            return True
+        
+        if self._state == GrappleState.ERROR:
+            self.logger.warning("Cannot move to clearance: in ERROR state")
+            return False
+        
+        # Command clearance position if not already set
+        if self.position_ref != self.CLEARANCE_POSITION_TARGET or \
+           self.control_mode != solo.ControlMode.POSITION_MODE:
+            self.position_control(self.CLEARANCE_POSITION_TARGET)
+            return False
+        
+        # Check if target reached
+        if self.position >= self.CLEARANCE_POSITION_TARGET:
+            self.logger.debug("Grapple clearance position target reached")
+            self.torque_control(0)
+            self._state = GrappleState.CLEARANCE
+            self.logger.info("Grapple reached CLEARANCE state")
+            return True
+        
+        return False
+
+class AVCController(MechanismController):
+    """
+    Controller for AVC (Active Vibration Control) mechanisms.
+    
+    Manages states: HOME, LAUNCH_LOCK, POS1, POS1p5, POS2
+    Provides methods for homing and moving between positions.
+    """
+    
+    # Configuration constants (should be loaded from config file in production)
+    HOME_CURRENT_TARGET = 0.08  # [A]
+    POS1_TARGET = 1000  # [QP] - Placeholder value, needs configuration
+    POS1P5_TARGET = 1500  # [QP] - Placeholder value, needs configuration
+    POS2_TARGET = 2000  # [QP] - Placeholder value, needs configuration
+    
+    def __init__(self, name: str, motor_params: dict, logger, available_ports: list):
+        """
+        Initialize the AVC controller.
+        
+        Args:
+            name: Name of the AVC mechanism ('avc_a' or 'avc_b')
+            motor_params: Motor configuration parameters
+            logger: ROS logger instance
+            available_ports: List of available serial ports
+        """
+        if name not in ['avc_a', 'avc_b']:
+            raise ValueError(f"Invalid AVC name: {name}. Must be 'avc_a' or 'avc_b'")
+        super().__init__(name, motor_params, logger, available_ports)
+    
+    def _get_initial_state(self):
+        """Return the initial state for AVC mechanism."""
+        return AVCState.UNCONTROLLED
+    
+    def _get_error_state(self):
+        """Return the error state for AVC mechanism."""
+        return AVCState.ERROR
+    
+    def home(self) -> bool:
+        """
+        Move the AVC mechanism to HOME position using current control.
+        
+        Returns:
+            bool: True if homing is complete, False if still in progress
+        """
+        if self._state == AVCState.HOME:
+            return True
+        
+        if self._state == AVCState.ERROR:
+            self.logger.warning(f"Cannot home {self.name}: in ERROR state")
+            return False
+        
+        # Apply homing current if not already set
+        if self.torque_ref != self.HOME_CURRENT_TARGET or \
+           self.control_mode != solo.ControlMode.TORQUE_MODE:
+            self.torque_control(self.HOME_CURRENT_TARGET)
+            return False
+        
+        # Check if homing is complete
+        if abs(self.current) >= abs(self.HOME_CURRENT_TARGET) and self.speed == 0:
+            self.logger.debug(f"{self.name} homing current target reached")
+            self.torque_control(0)
+            self.reset_position()
+            self._state = AVCState.HOME
+            self._homed = True
+            self.logger.info(f"{self.name} reached HOME state")
+            return True
+        
+        return False
+    
+    def launch_lock(self):
+        """
+        Move the AVC mechanism to LAUNCH_LOCK state.
+        
+        Note: Implementation not yet defined. Placeholder for future development.
+        """
+        if self._state == AVCState.ERROR:
+            self.logger.warning(f"Cannot move {self.name} to LAUNCH_LOCK: in ERROR state")
+            return
+        
+        # TODO: Implement LAUNCH_LOCK movement logic
+        self._state = AVCState.LAUNCH_LOCK
+        self.logger.info(f"{self.name} moved to LAUNCH_LOCK state")
+    
+    def pos1(self) -> bool:
+        """
+        Move the AVC mechanism to POS1.
+        
+        Returns:
+            bool: True if position is reached, False if still in progress
+        """
+        if self._state == AVCState.POS1:
+            return True
+        
+        if self._state == AVCState.ERROR:
+            self.logger.warning(f"Cannot move {self.name} to POS1: in ERROR state")
+            return False
+        
+        # Command position if not already set
+        if self.position_ref != self.POS1_TARGET or \
+           self.control_mode != solo.ControlMode.POSITION_MODE:
+            self.position_control(self.POS1_TARGET)
+            return False
+        
+        # Check if target reached (with small tolerance)
+        if abs(self.position - self.POS1_TARGET) <= 10:
+            self.logger.debug(f"{self.name} POS1 target reached")
+            self._state = AVCState.POS1
+            self.logger.info(f"{self.name} reached POS1 state")
+            return True
+        
+        return False
+    
+    def pos1p5(self) -> bool:
+        """
+        Move the AVC mechanism to POS1.5 (intermediate position).
+        
+        Returns:
+            bool: True if position is reached, False if still in progress
+        """
+        if self._state == AVCState.POS1p5:
+            return True
+        
+        if self._state == AVCState.ERROR:
+            self.logger.warning(f"Cannot move {self.name} to POS1.5: in ERROR state")
+            return False
+        
+        # Command position if not already set
+        if self.position_ref != self.POS1P5_TARGET or \
+           self.control_mode != solo.ControlMode.POSITION_MODE:
+            self.position_control(self.POS1P5_TARGET)
+            return False
+        
+        # Check if target reached
+        if abs(self.position - self.POS1P5_TARGET) <= 10:
+            self.logger.debug(f"{self.name} POS1.5 target reached")
+            self._state = AVCState.POS1p5
+            self.logger.info(f"{self.name} reached POS1.5 state")
+            return True
+        
+        return False
+    
+    def pos2(self) -> bool:
+        """
+        Move the AVC mechanism to POS2.
+        
+        Returns:
+            bool: True if position is reached, False if still in progress
+        """
+        if self._state == AVCState.POS2:
+            return True
+        
+        if self._state == AVCState.ERROR:
+            self.logger.warning(f"Cannot move {self.name} to POS2: in ERROR state")
+            return False
+        
+        # Command position if not already set
+        if self.position_ref != self.POS2_TARGET or \
+           self.control_mode != solo.ControlMode.POSITION_MODE:
+            self.position_control(self.POS2_TARGET)
+            return False
+        
+        # Check if target reached
+        if abs(self.position - self.POS2_TARGET) <= 10:
+            self.logger.debug(f"{self.name} POS2 target reached")
+            self._state = AVCState.POS2
+            self.logger.info(f"{self.name} reached POS2 state")
+            return True
+        
+        return False
+
 # Class definition for GRASP Node
 class GRASPNode(Node):
     """
@@ -143,47 +764,46 @@ class GRASPNode(Node):
         # Find available serial ports
         self.available_ports = self.find_available_ports()
         
-        # Initialize motors
-        self.get_logger().debug('Initializing motors')
+        # Initialize motor controllers
+        self.get_logger().debug('Initializing motor controllers')
         
-        # Grapple Mechanism
-        try:
-            self.grapple_Solo = self.motor_init('grapple')
-            self.grapple_state = GrappleState.UNCONTROLLED
-            self.grapple_homed = False
-            self.get_logger().info("Grapple state set to UNCONTROLLED")
-        except Exception as e:
-            self.get_logger().warning(f"Failed to initialize grapple motor: {e}")
-            self.grapple_state = GrappleState.ERROR
-            self.grapple_Solo = None
-            self.grapple_homed = False
-            self.get_logger().info("Grapple state set to ERROR")
+        # Helper function to extract motor parameters
+        def get_motor_params(motor_name: str) -> dict:
+            """Extract motor parameters from ROS parameters for a specific motor."""
+            idx = self.get_parameter('solo_params.name').get_parameter_value().string_array_value.index(motor_name)
+            return {
+                'address': self.get_parameter('solo_params.address').get_parameter_value().integer_array_value[idx],
+                'baudrate': self.get_parameter('solo_params.baudrate').get_parameter_value().integer_array_value[idx],
+                'pwm_frequency_khz': self.get_parameter('solo_params.pwm_frequency_khz').get_parameter_value().integer_array_value[idx],
+                'current_limit': self.get_parameter('solo_params.current_limit').get_parameter_value().integer_array_value[idx],
+                'motor_poles_counts': self.get_parameter('solo_params.motor_poles_counts').get_parameter_value().integer_array_value[idx],
+                'command_mode': self.get_parameter('solo_params.command_mode').get_parameter_value().string_array_value[idx],
+                'motor_type': self.get_parameter('solo_params.motor_type').get_parameter_value().string_array_value[idx],
+                'feedback_control_mode': self.get_parameter('solo_params.feedback_control_mode').get_parameter_value().string_array_value[idx],
+                'current_controller_kp': self.get_parameter('solo_params.current_controller_kp').get_parameter_value().double_array_value[idx],
+                'current_controller_ki': self.get_parameter('solo_params.current_controller_ki').get_parameter_value().double_array_value[idx],
+                'speed_controller_kp': self.get_parameter('solo_params.speed_controller_kp').get_parameter_value().double_array_value[idx],
+                'speed_controller_ki': self.get_parameter('solo_params.speed_controller_ki').get_parameter_value().double_array_value[idx],
+                'position_controller_kp': self.get_parameter('solo_params.position_controller_kp').get_parameter_value().double_array_value[idx],
+                'position_controller_ki': self.get_parameter('solo_params.position_controller_ki').get_parameter_value().double_array_value[idx],
+                'control_mode': self.get_parameter('solo_params.control_mode').get_parameter_value().string_array_value[idx],
+                'speed_limit': self.get_parameter('solo_params.speed_limit').get_parameter_value().integer_array_value[idx],
+                'speed_acceleration': self.get_parameter('solo_params.speed_acceleration').get_parameter_value().integer_array_value[idx],
+                'speed_deceleration': self.get_parameter('solo_params.speed_deceleration').get_parameter_value().integer_array_value[idx],
+                'logger_level': self.get_parameter('solo_params.logger_level').get_parameter_value().integer_array_value[idx],
+            }
+        
+        # Initialize Grapple Controller
+        grapple_params = get_motor_params('grapple')
+        self.grapple_controller = GrappleController(grapple_params, self.get_logger(), self.available_ports)
 
-        # AVC A Mechanism
-        try:
-            self.avc_a_Solo = self.motor_init('avc_a')
-            self.avc_a_state = AVCState.UNCONTROLLED
-            self.avc_a_homed = False
-            self.get_logger().info('AVC A state set to UNCONTROLLED')
-        except Exception as e:
-            self.get_logger().warning(f"Failed to initialize AVC A motor: {e}")
-            self.avc_a_state = AVCState.ERROR
-            self.avc_a_Solo = None
-            self.avc_a_homed = False
-            self.get_logger().info('AVC A state set to ERROR')
+        # Initialize AVC A Controller
+        avc_a_params = get_motor_params('avc_a')
+        self.avc_a_controller = AVCController('avc_a', avc_a_params, self.get_logger(), self.available_ports)
         
-        # AVC B Mechanism
-        try:
-            self.avc_b_Solo = self.motor_init('avc_b')
-            self.avc_b_state = AVCState.UNCONTROLLED
-            self.avc_b_homed = False
-            self.get_logger().info('AVC B state set to UNCONTROLLED')
-        except Exception as e:
-            self.get_logger().warning(f"Failed to initialize AVC B motor: {e}")
-            self.avc_b_state = AVCState.ERROR
-            self.avc_b_Solo = None
-            self.avc_b_homed = False
-            self.get_logger().info('AVC B state set to ERROR')
+        # Initialize AVC B Controller
+        avc_b_params = get_motor_params('avc_b')
+        self.avc_b_controller = AVCController('avc_b', avc_b_params, self.get_logger(), self.available_ports)
     
         # Set up a function that constantly monitors the state machine
         self.state_machine_frequency = self.get_parameter('state_machine_params.frequency').get_parameter_value().double_value
@@ -198,17 +818,17 @@ class GRASPNode(Node):
 
         
         # Add GRASP publishers
-        if self.grapple_state != GrappleState.ERROR:
+        if not self.grapple_controller.is_error():
             self.pub_gra_motor_feedback = self.create_publisher(String,  'gra_motor_feedback', 10)
             self.pub_gra_motor_curr_iq  = self.create_publisher(Float64, 'gra_motor_current_iq', 10)
             self.pub_gra_motor_pos      = self.create_publisher(Int32,   'gra_motor_pos', 10)
             self.pub_gra_motor_vel      = self.create_publisher(Int32,   'gra_motor_vel', 10)
-        if self.avc_a_state != AVCState.ERROR:
+        if not self.avc_a_controller.is_error():
             self.pub_avc_a_motor_feedback = self.create_publisher(String,  'avc_a_motor_feedback', 10)
             self.pub_avc_a_motor_curr_iq  = self.create_publisher(Float64, 'avc_a_motor_current_iq', 10)
             self.pub_avc_a_motor_pos      = self.create_publisher(Int32,   'avc_a_motor_pos', 10)
             self.pub_avc_a_motor_vel      = self.create_publisher(Int32,   'avc_a_motor_vel', 10)
-        if self.avc_b_state != AVCState.ERROR:
+        if not self.avc_b_controller.is_error():
             self.pub_avc_b_motor_feedback = self.create_publisher(String,  'avc_b_motor_feedback', 10)
             self.pub_avc_b_motor_curr_iq  = self.create_publisher(Float64, 'avc_b_motor_current_iq', 10)
             self.pub_avc_b_motor_pos      = self.create_publisher(Int32,   'avc_b_motor_pos', 10)
@@ -243,182 +863,6 @@ class GRASPNode(Node):
                 pass
         return available_ports
 
-    # Function for initialising motor
-    def motor_init(self, name):
-        """
-        Initialize a Solo motor controller for the given motor name using parameters.
-        Args:
-            name (str): Name of the motor ('grapple', 'avc_a' or 'avc_b').
-        Returns:
-            SoloMotorControllerUart: Initialized Solo motor controller object.
-        Raises:
-            Exception: If the motor driver cannot be found on any available port.
-        """
-        # Get parameters for initialising motor 
-        self.get_logger().info(f'Initializing {name} motor driver')
-        # Get the parameter index for the motor name
-        idx = self.get_parameter(f'solo_params.name').get_parameter_value().string_array_value.index(name)
-        address = self.get_parameter(f'solo_params.address').get_parameter_value().integer_array_value[idx]
-        baudrate = self.get_parameter(f'solo_params.baudrate').get_parameter_value().integer_array_value[idx]
-        pwm_frequency_khz = self.get_parameter(f'solo_params.pwm_frequency_khz').get_parameter_value().integer_array_value[idx]
-        current_limit = self.get_parameter(f'solo_params.current_limit').get_parameter_value().integer_array_value[idx]
-        motor_poles_counts = self.get_parameter(f'solo_params.motor_poles_counts').get_parameter_value().integer_array_value[idx]
-        command_mode = self.get_parameter(f'solo_params.command_mode').get_parameter_value().string_array_value[idx]
-        motor_type = self.get_parameter(f'solo_params.motor_type').get_parameter_value().string_array_value[idx]
-        feedback_control_mode = self.get_parameter(f'solo_params.feedback_control_mode').get_parameter_value().string_array_value[idx]
-        current_controller_kp = self.get_parameter(f'solo_params.current_controller_kp').get_parameter_value().double_array_value[idx]
-        current_controller_ki = self.get_parameter(f'solo_params.current_controller_ki').get_parameter_value().double_array_value[idx]
-        speed_controller_kp = self.get_parameter(f'solo_params.speed_controller_kp').get_parameter_value().double_array_value[idx]
-        speed_controller_ki = self.get_parameter(f'solo_params.speed_controller_ki').get_parameter_value().double_array_value[idx]
-        position_controller_kp = self.get_parameter(f'solo_params.position_controller_kp').get_parameter_value().double_array_value[idx]
-        position_controller_ki = self.get_parameter(f'solo_params.position_controller_ki').get_parameter_value().double_array_value[idx]
-        control_mode = self.get_parameter(f'solo_params.control_mode').get_parameter_value().string_array_value[idx]
-        speed_limit = self.get_parameter(f'solo_params.speed_limit').get_parameter_value().integer_array_value[idx]
-        speed_acceleration = self.get_parameter(f'solo_params.speed_acceleration').get_parameter_value().integer_array_value[idx]
-        speed_deceleration = self.get_parameter(f'solo_params.speed_deceleration').get_parameter_value().integer_array_value[idx]
-        logger_level = self.get_parameter(f'solo_params.logger_level').get_parameter_value().integer_array_value[idx]
-
-        if baudrate == 937500:
-            soloBaudrate = solo.UartBaudRate.RATE_937500
-        else: 
-            self.get_logger().error(f"Unrecognised baudrate parsed as {name} motor driver parameter")
-        if command_mode == 'DIGITAL': 
-            command_mode = solo.CommandMode.DIGITAL
-        else: 
-            self.get_logger().error(f"Unrecognised command mode parsed as {name} motor driver parameter")
-        if motor_type == 'BLDC_PMSM':
-            motor_type = solo.MotorType.BLDC_PMSM
-        else: 
-            self.get_logger().error(f"Unrecognised motor type parsed as {name} motor driver parameter")
-        if feedback_control_mode == 'HALL_SENSORS':
-            feedback_control_mode = solo.FeedbackControlMode.HALL_SENSORS
-        else:
-            self.get_logger().error(f"Unrecognised feedback control mode parsed as {name} motor driver parameter")
-        if control_mode == 'POSITION_MODE':
-            control_mode = solo.ControlMode.POSITION_MODE
-        else: 
-            self.get_logger().error(f"Unrecognised control mode parsed as {name} motor driver parameter")
-
-        # Connecting to correct motor driver
-        connection_successful = False
-        for port in self.available_ports:
-            self.get_logger().info(f"Attempting to connect to {name} motor driver over {port}")
-            Solo = solo.SoloMotorControllerUart(port=port, baudrate=soloBaudrate, address=address, loggerLevel=logger_level)
-            read_address = Solo.get_device_address()[0]
-            self.get_logger().info(f"{port} reads back motor address as {read_address}")
-            if read_address == address:
-                self.get_logger().info(f"Successfully connected to {name} motor driver over {port}")
-                self.available_ports.remove(port)
-                connection_successful = True
-                break
-            else:
-                self.get_logger().info(f"Could not find {name} motor driver over {port}")
-                self.get_logger().info(f"Disconnecting from {port}")
-                connection_successful = False
-                Solo.serial_close()
-
-        # If motor driver cannot be found throw exception
-        if not connection_successful:
-            raise Exception(f"Could not find {name} motor driver over any available port: {self.available_ports}")
-        
-        # Setting up motor driver
-        # Reset initial position to zero
-        self.get_logger().info(f"Resetting {name} position to zero")
-        Solo.reset_position_to_zero()
-
-        # Applying motor parameters
-        self.get_logger().debug(f"Applying {name} motor parameters")
-        Solo.set_output_pwm_frequency_khz(pwm_frequency_khz)              # Desired switching or PWM frequency at output
-        Solo.set_current_limit(current_limit)                          # Current limit of the motor
-        Solo.set_motor_poles_counts(motor_poles_counts)                     # Motor's number of poles
-        Solo.set_command_mode(command_mode) 
-        Solo.set_motor_type(motor_type)
-        Solo.set_feedback_control_mode(feedback_control_mode)
-        Solo.set_current_controller_kp(current_controller_kp)                # Current controller Kp
-        Solo.set_current_controller_ki(current_controller_ki)              # Current controller Ki
-        Solo.set_speed_controller_kp(speed_controller_kp)                  # Speed controller Kp
-        Solo.set_speed_controller_ki(speed_controller_ki)                # Speed controller Ki
-        Solo.set_position_controller_kp(position_controller_kp)                # Position controller Kp
-        Solo.set_position_controller_ki(position_controller_ki)                 # Position controller Ki
-        Solo.set_control_mode(control_mode)
-        Solo.set_speed_limit(speed_limit)                         # Desired Speed Limit[RPM].
-        Solo.set_speed_acceleration_value(speed_acceleration)             # Speed acceleration limit[RPM].
-        Solo.set_speed_deceleration_value(speed_deceleration)             # Speed deceleration limit[RPM].
-
-        # Log out set values
-        self.get_logger().debug(f"""
-        {name} motor driver read parameters:\n
-        Board Temperature: {str(Solo.get_board_temperature()[0])} degrees\n
-        The position controller gains for the {name} motor are:\n
-        Kp = {str(Solo.get_position_controller_kp()[0] )}\n
-        Ki = {str(Solo.get_position_controller_ki()[0] )}\n
-        The velocity controller gains are:\n
-        Kp = {str(Solo.get_speed_controller_kp()[0])}\n
-        Ki = {str(Solo.get_speed_controller_ki()[0])}\n
-        The current controller gains are:\n
-        Kp = {str(Solo.get_current_controller_kp()[0])}\n
-        Ki = {str(Solo.get_current_controller_ki()[0])}\n
-        Control mode is: {str(Solo.get_control_mode()[0])}\n
-        Speed Limit is: {str(Solo.get_speed_limit()[0])}\n
-        Current Limit is: {str(Solo.get_current_limit()[0])}\n
-        Speed acceleration limit is: {str(Solo.get_speed_acceleration_value()[0])}\n
-        """)
-
-        return Solo
-
-    def motor_position_control(self, Solo, position_reference):
-        """
-        Set the motor to position mode and command it to the specified position.
-        Args:
-            Solo: Solo motor controller object.
-            position_reference (float): Target position value.
-        """
-        # This a function to request a specific position to the motor.
-        Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
-        self.get_logger().debug(f"Changing motor to position mode control and setting position reference {position_reference}")
-        Solo.set_position_reference(position_reference)
-        return
-
-    def motor_speed_control(self, Solo, speed_reference):
-        """
-        Set the motor to speed mode and command it to the specified speed.
-        Args:
-            Solo: Solo motor controller object.
-            speed_reference (float): Target speed value.
-        """
-        # This a function to request a specific speed to the motor.
-        Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
-        if speed_reference < 0:
-            Solo.set_motor_direction(solo.Direction.CLOCKWISE)
-            speed_reference = abs(speed_reference)
-            self.get_logger().debug(f"Changing motor to speed mode control and setting speed reference {speed_reference} in CLOCKWISE direction")
-        else:
-            Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
-            speed_reference = abs(speed_reference)
-            self.get_logger().debug(f"Changing motor to speed mode control and setting speed reference {speed_reference} in COUNTERCLOCKWISE direction")
-        Solo.set_speed_reference(speed_reference)
-        return
-
-    def motor_torque_control(self, Solo, torque_reference):
-        """
-        Set the motor to torque mode and command it to the specified torque.
-        Args:
-            Solo: Solo motor controller object.
-            torque_reference (float): Target torque value.
-        """
-        # This a function to request a specific torque to the motor.
-        Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
-        if torque_reference < 0:
-            Solo.set_motor_direction(solo.Direction.CLOCKWISE)
-            torque_reference = abs(torque_reference)
-            self.get_logger().debug(f"Changing motor to torque mode control and setting torque reference {torque_reference} in CLOCKWISE direction")
-        else:
-            Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
-            torque_reference = abs(torque_reference)
-            self.get_logger().debug(f"Changing motor to torque mode control and setting torque reference {torque_reference} in COUNTERCLOCKWISE direction")
-        Solo.set_torque_reference_iq(torque_reference)
-        return
-    
     # Function to publish data into topics
     def publish_data(self):
         """
@@ -427,65 +871,66 @@ class GRASPNode(Node):
         # This function publish the data we want to record for external analysis
         
         # ----------------- Grapple data ----------------------------------
-        if self.grapple_state != GrappleState.ERROR:
+        if not self.grapple_controller.is_error():
             msg = String()
-            msg.data = f"State: {self.grapple_state.name}"
+            msg.data = f"State: {self.grapple_controller.get_state().name}"
             self.pub_gra_motor_feedback.publish(msg)
 
             #Position Feedback
             grapple_motor_pos_msg = Int32()
-            grapple_motor_pos_msg.data = self.gra_motor_pos
+            grapple_motor_pos_msg.data = self.grapple_controller.position
             self.pub_gra_motor_pos.publish(grapple_motor_pos_msg)
             
             #Velocity Feedback
             grapple_motor_vel_msg = Int32()
-            grapple_motor_vel_msg.data = self.gra_motor_speed
+            grapple_motor_vel_msg.data = self.grapple_controller.speed
             self.pub_gra_motor_vel.publish(grapple_motor_vel_msg)
             
             #Current Phase Iq Feedback
             grapple_current_iq_msg = Float64()
-            grapple_current_iq_msg.data = self.gra_motor_current
+            grapple_current_iq_msg.data = self.grapple_controller.current
             self.pub_gra_motor_curr_iq.publish(grapple_current_iq_msg)
         
-        # ----------------- AVC data -----------------------------------
-        if self.avc_a_state != AVCState.ERROR:
+        # ----------------- AVC A data -----------------------------------
+        if not self.avc_a_controller.is_error():
             avc_msg = String()
-            avc_msg.data = f"State: {self.avc_a_state.name}"
+            avc_msg.data = f"State: {self.avc_a_controller.get_state().name}"
             self.pub_avc_a_motor_feedback.publish(avc_msg)
 
             #Position Feedback
             avc_motor_pos_msg = Int32()
-            avc_motor_pos_msg.data = self.avc_a_motor_pos
+            avc_motor_pos_msg.data = self.avc_a_controller.position
             self.pub_avc_a_motor_pos.publish(avc_motor_pos_msg)
             
             #Velocity Feedback
             avc_motor_vel_msg = Int32()
-            avc_motor_vel_msg.data = self.avc_a_motor_speed
+            avc_motor_vel_msg.data = self.avc_a_controller.speed
             self.pub_avc_a_motor_vel.publish(avc_motor_vel_msg)
             
             #Current Phase Iq Feedback
             avc_current_iq_msg = Float64()
-            avc_current_iq_msg.data = self.avc_a_motor_current
+            avc_current_iq_msg.data = self.avc_a_controller.current
             self.pub_avc_a_motor_curr_iq.publish(avc_current_iq_msg)
             
-        if self.avc_b_state != AVCState.ERROR:
+        # ----------------- AVC B data -----------------------------------
+        if not self.avc_b_controller.is_error():
             avc_msg = String()
-            avc_msg.data = f"State: {self.avc_b_state.name}"
+            avc_msg.data = f"State: {self.avc_b_controller.get_state().name}"
             self.pub_avc_b_motor_feedback.publish(avc_msg)
 
             #Position Feedback
             avc_motor_pos_msg = Int32()
-            avc_motor_pos_msg.data = self.avc_b_motor_pos
+            avc_motor_pos_msg.data = self.avc_b_controller.position
             self.pub_avc_b_motor_pos.publish(avc_motor_pos_msg)
             
             #Velocity Feedback
             avc_motor_vel_msg = Int32()
-            avc_motor_vel_msg.data = self.avc_b_motor_speed
+            avc_motor_vel_msg.data = self.avc_b_controller.speed
             self.pub_avc_b_motor_vel.publish(avc_motor_vel_msg)
             
             #Current Phase Iq Feedback
             avc_current_iq_msg = Float64()
-            avc_current_iq_msg.data = self.avc_b_motor_current
+            avc_current_iq_msg.data = self.avc_b_controller.current
             self.pub_avc_b_motor_curr_iq.publish(avc_current_iq_msg)
         
     # EXTERNAL FLAG MANAGEMENT  
@@ -559,36 +1004,10 @@ class GRASPNode(Node):
         Updates motor states and executes state-dependent actions.
         """
 
-        # Get the current state from Solo controllers
-        # Grapple mechanism state
-        if self.grapple_state != GrappleState.ERROR:
-            self.gra_motor_pos_ref, error = self.grapple_Solo.get_position_reference()
-            self.gra_motor_speed_ref, error = self.grapple_Solo.get_speed_reference()
-            self.gra_motor_torque_ref, error = self.grapple_Solo.get_torque_reference_iq()
-            self.gra_motor_control_mode, error = self.grapple_Solo.get_control_mode()
-            self.gra_motor_pos, error     = self.grapple_Solo.get_position_counts_feedback()
-            self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
-            self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
-
-        # AVC A mechanism state
-        if self.avc_a_state != AVCState.ERROR:
-            self.avc_a_motor_pos_ref, error = self.avc_a_Solo.get_position_reference()
-            self.avc_a_motor_speed_ref, error = self.avc_a_Solo.get_speed_reference()
-            self.avc_a_motor_torque_ref, error = self.avc_a_Solo.get_torque_reference_iq()
-            self.avc_a_motor_control_mode, error = self.avc_a_Solo.get_control_mode()
-            self.avc_a_motor_pos, error     = self.avc_a_Solo.get_position_counts_feedback()
-            self.avc_a_motor_speed, error   = self.avc_a_Solo.get_speed_feedback()
-            self.avc_a_motor_current, error = self.avc_a_Solo.get_quadrature_current_iq_feedback()
-
-        # AVC B mechanism state
-        if self.avc_b_state != AVCState.ERROR:
-            self.avc_b_motor_pos_ref, error = self.avc_b_Solo.get_position_reference()
-            self.avc_b_motor_speed_ref, error = self.avc_b_Solo.get_speed_reference()
-            self.avc_b_motor_torque_ref, error = self.avc_b_Solo.get_torque_reference_iq()
-            self.avc_b_motor_control_mode, error = self.avc_b_Solo.get_control_mode()
-            self.avc_b_motor_pos, error     = self.avc_b_Solo.get_position_counts_feedback()
-            self.avc_b_motor_speed, error   = self.avc_b_Solo.get_speed_feedback()
-            self.avc_b_motor_current, error = self.avc_b_Solo.get_quadrature_current_iq_feedback()
+        # Update feedback from all controllers
+        self.grapple_controller.update_feedback()
+        self.avc_a_controller.update_feedback()
+        self.avc_b_controller.update_feedback()
             
         # Checking GRASP modes and calling relevant code
         match self.GRASP_mode:
@@ -627,31 +1046,16 @@ class GRASPNode(Node):
                 2) FREE FLIGHT command received -> Transitions to FREE_FLIGHT mode
                 """
                 
-                # Entry actions:
-                if self.grapple_state != GrappleState.ERROR:
-                    if self.grapple_state != GrappleState.HOME:
-                        target_iq = -0.7 # [A] Configuration parameter to be added to config file at later date.
-                        if self.gra_motor_torque_ref != target_iq or self.gra_motor_control_mode != solo.ControlMode.TORQUE_MODE:
-                            self.motor_torque_control(self.grapple_Solo, target_iq)
-                    
-                        # Active actions:
-                        if abs(self.gra_motor_current) >= abs(target_iq) and self.gra_motor_speed == 0:
-                            self.get_logger().debug('Current target for grapple homing reached.')
-                            self.motor_torque_control(self.grapple_Solo, 0)
-                            self.get_logger().debug('Setting current position to 0 to complete HOMING')
-                            # Resetting position to 0 QP. Setting state to HOME.
-                            self.grapple_Solo.reset_position_to_zero()
-                            self.grapple_Solo.set_position_reference(0)
-                            # Changing grapple state to HOME
-                            self.grapple_state = GrappleState.HOME
-                            self.grapple_homed = True
-                            self.get_logger().info('Changed grapple state to HOME.')
+                # Entry actions: Call grapple controller's home method
+                if not self.grapple_controller.is_error():
+                    self.grapple_controller.home()
                         
                 # Exit conditions
-                if self.GRASP_command == GRASPCommand.LAUNCH_LOCK and (self.grapple_state == GrappleState.HOME or self.grapple_state == GrappleState.ERROR):
+                grapple_state = self.grapple_controller.get_state()
+                if self.GRASP_command == GRASPCommand.LAUNCH_LOCK and (grapple_state == GrappleState.HOME or grapple_state == GrappleState.ERROR):
                     self.GRASP_mode = GRASPMode.LAUNCH_LOCKED
                     self.get_logger().info('Changed GRASP mode to LAUNCH_LOCKED.')
-                elif self.GRASP_command == GRASPCommand.FREE_FLIGHT and (self.grapple_state == GrappleState.HOME or self.grapple_state == GrappleState.ERROR):
+                elif self.GRASP_command == GRASPCommand.FREE_FLIGHT and (grapple_state == GrappleState.HOME or grapple_state == GrappleState.ERROR):
                     self.GRASP_mode = GRASPMode.FREE_FLIGHT
                     self.get_logger().info('Changed GRASP mode to FREE_FLIGHT.')
             
@@ -663,26 +1067,13 @@ class GRASPNode(Node):
                 AVC A mechanism reaches HOME state -> Transitions to AVC_B_HOME mode
                 """
                 
-                # Entry actions:
-                if self.avc_a_state != AVCState.ERROR:
-                    if self.avc_a_state != AVCState.HOME:
-                        target_iq = 0.08 # [A] Configuration parameter to be added to config file at later date.
-                        if self.avc_a_motor_torque_ref != target_iq or self.avc_a_motor_control_mode != solo.ControlMode.TORQUE_MODE:
-                            self.motor_torque_control(self.avc_a_Solo, target_iq)
-                        # Active actions:
-                        if abs(self.avc_a_motor_current) >= abs(target_iq) and self.avc_a_motor_speed == 0:
-                            self.get_logger().debug('Current target for AVC A homing reached.')
-                            self.motor_torque_control(self.avc_a_Solo, 0)
-                            self.get_logger().debug('Setting current position to 0 to complete HOMING')
-                            # Resetting position to 0 QP. Setting state to HOME.
-                            self.avc_a_Solo.reset_position_to_zero()
-                            self.avc_a_Solo.set_position_reference(0)
-                            # Changing AVC A state to HOME
-                            self.avc_a_state = AVCState.HOME
-                            self.get_logger().info('Changed AVC A state to HOME.')
+                # Entry actions: Call AVC A controller's home method
+                if not self.avc_a_controller.is_error():
+                    self.avc_a_controller.home()
                             
                 # Exit conditions
-                if self.avc_a_state == AVCState.HOME or self.avc_a_state == AVCState.ERROR:
+                avc_a_state = self.avc_a_controller.get_state()
+                if avc_a_state == AVCState.HOME or avc_a_state == AVCState.ERROR:
                     self.GRASP_mode = GRASPMode.AVC_B_HOME
                     self.get_logger().info('Changed GRASP mode to AVC_B_HOME.')
                 
@@ -694,27 +1085,13 @@ class GRASPNode(Node):
                 AVC B mechanism reaches HOME state -> Transitions to GRAPPLE_HOME mode
                 """
                 
-                # Entry actions:
-                if self.avc_b_state != AVCState.ERROR:
-                    if self.avc_b_state != AVCState.HOME:
-                        target_iq = 0.08 # [A] Configuration parameter to be added to config file at later date.
-                        if self.avc_b_motor_torque_ref != target_iq or self.avc_b_motor_control_mode != solo.ControlMode.TORQUE_MODE:
-                            self.motor_torque_control(self.avc_b_Solo, target_iq)
-                            
-                        # Active actions:
-                        if abs(self.avc_b_motor_current) >= abs(target_iq) and self.avc_b_motor_speed == 0:
-                            self.get_logger().debug('Current target for AVC B homing reached.')
-                            self.motor_torque_control(self.avc_b_Solo, 0)
-                            self.get_logger().debug('Setting current position to 0 to complete HOMING')
-                            # Resetting position to 0 QP. Setting state to HOME.
-                            self.avc_b_Solo.reset_position_to_zero()
-                            self.avc_b_Solo.set_position_reference(0)
-                            # Changing AVC B state to HOME
-                            self.avc_b_state = AVCState.HOME
-                            self.get_logger().info('Changed AVC B state to HOME.')
+                # Entry actions: Call AVC B controller's home method
+                if not self.avc_b_controller.is_error():
+                    self.avc_b_controller.home()
                         
                 # Exit conditions
-                if self.avc_b_state == AVCState.HOME or self.avc_b_state == AVCState.ERROR:
+                avc_b_state = self.avc_b_controller.get_state()
+                if avc_b_state == AVCState.HOME or avc_b_state == AVCState.ERROR:
                     self.GRASP_mode = GRASPMode.GRAPPLE_HOME
                     self.get_logger().info('Changed GRASP mode to GRAPPLE_HOME.')
 
@@ -725,11 +1102,9 @@ class GRASPNode(Node):
                 Exit:
                 READY command recieved -> Transitions to READY mode
                 """
-                # Entry actions:
-                if self.grapple_state != GrappleState.ERROR:
-                    if self.grapple_state != GrappleState.FREE_FLIGHT:
-                        self.grapple_state = GrappleState.FREE_FLIGHT
-                        self.get_logger().info('Changed grapple state to FREE_FLIGHT.')
+                # Entry actions: Call grapple controller's free_flight method
+                if not self.grapple_controller.is_error():
+                    self.grapple_controller.free_flight()
                 
                 # Exit conditions
                 if self.GRASP_command == GRASPCommand.READY:
@@ -744,17 +1119,9 @@ class GRASPNode(Node):
                 TRIGGER command received -> Transitions to SOFT_DOCK mode
                 """
                 
-                # Entry actions:
-                if self.grapple_state != GrappleState.ERROR:
-                    target_pos = 3900 # [QP] Configuration parameter to be added to config file at later date.
-                    if self.gra_motor_pos_ref != target_pos or self.gra_motor_control_mode != solo.ControlMode.POSITION_MODE:
-                        self.motor_position_control(self.grapple_Solo, target_pos)
-                    # Active actions:
-                    if self.gra_motor_pos >= target_pos:
-                        self.get_logger().debug('Position target for grapple opening reached.')
-                        self.motor_torque_control(self.grapple_Solo, 0)
-                        self.grapple_state = GrappleState.OPEN
-                        self.get_logger().info('Changed grapple state to OPEN.')
+                # Entry actions: Call grapple controller's open method
+                if not self.grapple_controller.is_error():
+                    self.grapple_controller.open()
                 
                 # Exit conditions
                 if self.GRASP_command == GRASPCommand.TRIGGER:
@@ -769,23 +1136,18 @@ class GRASPNode(Node):
                 1) GRAPPLE mechanism reaches SOFT_DOCK state -> Transitions to HARD_DOCK mode
                 2) CLEARANCE command received -> Transitions to CLEARANCE mode
                 """
-                # Entry actions:
-                if self.grapple_state != GrappleState.ERROR:
-                    target_speed = -2000 # [QPS] Configuration parameter to be added to config file at later date.
-                    if self.gra_motor_speed_ref != target_speed or self.gra_motor_control_mode != solo.ControlMode.SPEED_MODE:
-                        self.motor_speed_control(self.grapple_Solo, target_speed)
-                # Active actions:
+                # Entry actions: Call grapple controller's soft_dock method
+                if not self.grapple_controller.is_error():
+                    soft_dock_complete = self.grapple_controller.soft_dock()
                     
-                # Exit conditions:
+                    # Exit conditions:
+                    if soft_dock_complete:
+                        self.GRASP_mode = GRASPMode.HARD_DOCK
+                        self.get_logger().info('Changed GRASP mode to HARD_DOCK.')
+                    
                 if self.GRASP_command == GRASPCommand.CLEARANCE:
                     self.GRASP_mode = GRASPMode.CLEARANCE
                     self.get_logger().info('Changed GRASP mode to CLEARANCE.')
-                elif self.gra_motor_pos <= 3173: # [QP] Configuration parameter to be added to config file at later date. Need to find what this value is from Rhys and Palash
-                    self.get_logger().debug('Position target for grapple soft docking reached.')
-                    self.grapple_state = GrappleState.SOFT_DOCK
-                    self.get_logger().info('Changed grapple state to SOFT_DOCK.')
-                    self.GRASP_mode = GRASPMode.HARD_DOCK
-                    self.get_logger().info('Changed GRASP mode to HARD_DOCK.')
                 
             case GRASPMode.HARD_DOCK:
                 """
@@ -797,31 +1159,22 @@ class GRASPNode(Node):
                 3) AVC_A_POS1 command received -> Transitions to AVC_A_POS1 mode
                 4) AVC_B_POS1 command received -> Transitions to AVC_B_POS1 mode
                 """
-                # Entry actions:
-                if self.grapple_state != GrappleState.ERROR:
-                    if self.grapple_state != GrappleState.HARD_DOCK:
-                        if self.gra_motor_pos <= 3173: # [QP] Configuration parameter to be added to config file at later date.
-                            target_iq = -0.7 # [A] Configuration parameter to be added to config file at later date.
-                            if self.gra_motor_torque_ref != target_iq or self.gra_motor_control_mode != solo.ControlMode.TORQUE_MODE:
-                                self.motor_torque_control(self.grapple_Solo, target_iq)
-                            # Active actions:
-                            if abs(self.gra_motor_current) >= abs(target_iq) and self.gra_motor_speed == 0:
-                                self.get_logger().debug('Current target for grapple hard docking reached.')
-                                self.grapple_state = GrappleState.HARD_DOCK
-                                self.get_logger().info('Changed grapple state to HARD_DOCK.')
-                                self.motor_torque_control(self.grapple_Solo, 0) # May need to apply torque to maintain force. To be tested.
+                # Entry actions: Call grapple controller's hard_dock method
+                if not self.grapple_controller.is_error():
+                    self.grapple_controller.hard_dock()
 
                 # Exit conditions
+                grapple_state = self.grapple_controller.get_state()
                 if self.GRASP_command == GRASPCommand.CLEARANCE:
                     self.GRASP_mode = GRASPMode.CLEARANCE
                     self.get_logger().info('Changed GRASP mode to CLEARANCE.')
                 elif self.GRASP_command == GRASPCommand.RELEASE:
                     self.GRASP_mode = GRASPMode.RELEASE
                     self.get_logger().info('Changed GRASP mode to RELEASE.')
-                elif self.GRASP_command == GRASPCommand.AVC_A_POS1 and self.grapple_state == GrappleState.HARD_DOCK:
+                elif self.GRASP_command == GRASPCommand.AVC_A_POS1 and grapple_state == GrappleState.HARD_DOCK:
                     self.GRASP_mode = GRASPMode.AVC_A_POS1
                     self.get_logger().info('Changed GRASP mode to AVC_A_POS1.')
-                elif self.GRASP_command == GRASPCommand.AVC_B_POS1 and self.grapple_state == GrappleState.HARD_DOCK:
+                elif self.GRASP_command == GRASPCommand.AVC_B_POS1 and grapple_state == GrappleState.HARD_DOCK:
                     self.GRASP_mode = GRASPMode.AVC_B_POS1
                     self.get_logger().info('Changed GRASP mode to AVC_B_POS1.')
                     
@@ -906,21 +1259,12 @@ class GRASPNode(Node):
                 GRAPPLE mechanism reaches CLEARANCE state
                 STOP
                 """
-                # Entry actions:
-                if self.grapple_state != GrappleState.ERROR:
-                    if self.grapple_state != GrappleState.CLEARANCE:
-                        target_pos = 3600 # [QP] Configuration parameter to be added to config file
-                        if self.gra_motor_pos_ref != target_pos or self.gra_motor_control_mode != solo.ControlMode.POSITION_MODE:
-                            self.motor_position_control(self.grapple_Solo, target_pos)
-                        # Active actions:
-                        if self.gra_motor_pos >= target_pos:
-                            self.get_logger().debug('Position target for grapple releasing reached.')
-                            self.grapple_state = GrappleState.CLEARANCE
-                            self.get_logger().info('Changed grapple state to CLEARANCE.')
-                            self.motor_torque_control(self.grapple_Solo, 0)
+                # Entry actions: Call grapple controller's clearance method
+                if not self.grapple_controller.is_error():
+                    self.grapple_controller.clearance()
+                
                 # Exit conditions
-                if self.grapple_state == GrappleState.CLEARANCE:
-                    pass
+                # (Stays in this mode once clearance is reached)
                             
             case GRASPMode.HEATER_ON:
                 """
