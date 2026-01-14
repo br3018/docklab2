@@ -53,6 +53,7 @@ class GRASPMode(Enum):
 # Enum classes for GRASP commands
 class GRASPCommand(Enum):
     """Enumeration of possible GRASP commands."""
+    NONE = auto()
     RESET = auto()
     HOME = auto()
     LAUNCH_LOCK = auto()
@@ -527,7 +528,7 @@ class GrappleController(MechanismController):
 
 class AVCController(MechanismController):
     """
-    Controller for AVC (Active Vibration Control) mechanisms.
+    Controller for AVC (Active Valve Core) mechanisms.
     
     Manages states: HOME, LAUNCH_LOCK, POS1, POS1p5, POS2
     Provides methods for homing and moving between positions.
@@ -992,26 +993,56 @@ class GRASPNode(Node):
                 ERROR mode. GRASP does nothing.
                 """
                 pass
+                
             case GRASPMode.UNCONTROLLED:
                 """
                 UNCONTROLLED mode. GRASP does nothing.
                 Entry: RESET command received or startup
                 Exit: HOME command received -> Transitions to AVC_A_HOME mode
                 """
-                # Entry actions:
+                # --- Ongoing Actions ---
+                # No actions in uncontrolled state
                 
-                # Exit conditions
+                # --- Command-triggered Transitions ---
                 if self.GRASP_command == GRASPCommand.HOME:
                     self.GRASP_mode = GRASPMode.AVC_A_HOME
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to AVC_A_HOME.')
-
-            case GRASPMode.LAUNCH_LOCKED:
+                    return
+            
+            case GRASPMode.AVC_A_HOME:
                 """
-                LAUNCH_LOCKED mode. Not currently implemented.
-                Entry: move AVC A mechanism to LAUNCH LOCK state, move AVC B mechanism to LAUNCH LOCK state
-                STOP
+                AVC_A_HOME mode.
+                Entry: move AVC A mechanism to HOME state
+                Exit: 
+                AVC A mechanism reaches HOME state -> Transitions to AVC_B_HOME mode
                 """
-                pass
+                
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.avc_a_controller.home()
+                
+                # --- Completion-based Transitions ---
+                if action_complete:
+                    self.GRASP_mode = GRASPMode.AVC_B_HOME
+                    self.get_logger().info('Changed GRASP mode to AVC_B_HOME.')
+                    return
+                
+            case GRASPMode.AVC_B_HOME:
+                """
+                AVC_B_HOME mode.
+                Entry: move AVC B mechanism to HOME state
+                Exit: 
+                AVC B mechanism reaches HOME state -> Transitions to GRAPPLE_HOME mode
+                """
+                
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.avc_b_controller.home()
+                
+                # --- Completion-based Transitions ---
+                if action_complete:
+                    self.GRASP_mode = GRASPMode.GRAPPLE_HOME
+                    self.get_logger().info('Changed GRASP mode to GRAPPLE_HOME.')
+                    return
             
             case GRASPMode.GRAPPLE_HOME:
                 """
@@ -1022,55 +1053,34 @@ class GRASPNode(Node):
                 2) FREE FLIGHT command received -> Transitions to FREE_FLIGHT mode
                 """
                 
-                # Entry actions: Call grapple controller's home method
-                if self.grapple_controller.is_initialised():
-                    self.grapple_controller.home()
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.grapple_controller.home()
+                
+                # --- Completion-based Transitions ---
+                if not action_complete:
+                    return
                         
-                # Exit conditions
-                grapple_state = self.grapple_controller.get_state()
-                if self.GRASP_command == GRASPCommand.LAUNCH_LOCK and (grapple_state == GrappleState.HOME or grapple_state == GrappleState.ERROR):
+                # --- Command-triggered Transitions ---
+                if self.GRASP_command == GRASPCommand.LAUNCH_LOCK:
                     self.GRASP_mode = GRASPMode.LAUNCH_LOCKED
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to LAUNCH_LOCKED.')
-                elif self.GRASP_command == GRASPCommand.FREE_FLIGHT and (grapple_state == GrappleState.HOME or grapple_state == GrappleState.ERROR):
+                    return
+                    
+                if self.GRASP_command == GRASPCommand.FREE_FLIGHT:
                     self.GRASP_mode = GRASPMode.FREE_FLIGHT
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to FREE_FLIGHT.')
-            
-            case GRASPMode.AVC_A_HOME:
-                """
-                AVC_A_HOME mode.
-                Entry: move AVC A mechanism to HOME state
-                Exit: 
-                AVC A mechanism reaches HOME state -> Transitions to AVC_B_HOME mode
-                """
-                
-                # Entry actions: Call AVC A controller's home method
-                if self.avc_a_controller.is_initialised():
-                    self.avc_a_controller.home()
-                            
-                # Exit conditions
-                avc_a_state = self.avc_a_controller.get_state()
-                if avc_a_state == AVCState.HOME or avc_a_state == AVCState.ERROR:
-                    self.GRASP_mode = GRASPMode.AVC_B_HOME
-                    self.get_logger().info('Changed GRASP mode to AVC_B_HOME.')
-                
-            case GRASPMode.AVC_B_HOME:
-                """
-                AVC_B_HOME mode.
-                Entry: move AVC B mechanism to HOME state
-                Exit: 
-                AVC B mechanism reaches HOME state -> Transitions to GRAPPLE_HOME mode
-                """
-                
-                # Entry actions: Call AVC B controller's home method
-                if self.avc_b_controller.is_initialised():
-                    self.avc_b_controller.home()
-                        
-                # Exit conditions
-                avc_b_state = self.avc_b_controller.get_state()
-                if avc_b_state == AVCState.HOME or avc_b_state == AVCState.ERROR:
-                    self.GRASP_mode = GRASPMode.GRAPPLE_HOME
-                    self.get_logger().info('Changed GRASP mode to GRAPPLE_HOME.')
+                    return
 
+            case GRASPMode.LAUNCH_LOCKED:
+                """
+                LAUNCH_LOCKED mode. Not currently implemented.
+                Entry: move AVC A mechanism to LAUNCH LOCK state, move AVC B mechanism to LAUNCH LOCK state
+                STOP
+                """
+                pass
+            
             case GRASPMode.FREE_FLIGHT:
                 """
                 FREE_FLIGHT mode. Not currently implemented.
@@ -1078,14 +1088,19 @@ class GRASPNode(Node):
                 Exit:
                 READY command recieved -> Transitions to READY mode
                 """
-                # Entry actions: Call grapple controller's free_flight method
-                if self.grapple_controller.is_initialised():
-                    self.grapple_controller.free_flight()
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.grapple_controller.free_flight()
                 
-                # Exit conditions
+                # --- Completion-based Transitions ---
+                if not action_complete:
+                    return
+                
+                # --- Command-triggered Transitions ---
                 if self.GRASP_command == GRASPCommand.READY:
                     self.GRASP_mode = GRASPMode.READY
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to READY.')
+                    return
                     
             case GRASPMode.READY:
                 """
@@ -1095,14 +1110,19 @@ class GRASPNode(Node):
                 TRIGGER command received -> Transitions to SOFT_DOCK mode
                 """
                 
-                # Entry actions: Call grapple controller's open method
-                if self.grapple_controller.is_initialised():
-                    self.grapple_controller.open()
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.grapple_controller.open()
                 
-                # Exit conditions
+                # --- Completion-based Transitions ---
+                if not action_complete:
+                    return
+                
+                # --- Command-triggered Transitions ---
                 if self.GRASP_command == GRASPCommand.TRIGGER:
                     self.GRASP_mode = GRASPMode.SOFT_DOCK
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to SOFT_DOCK.')
+                    return
             
             case GRASPMode.SOFT_DOCK:
                 """
@@ -1112,18 +1132,21 @@ class GRASPNode(Node):
                 1) GRAPPLE mechanism reaches SOFT_DOCK state -> Transitions to HARD_DOCK mode
                 2) CLEARANCE command received -> Transitions to CLEARANCE mode
                 """
-                # Entry actions: Call grapple controller's soft_dock method
-                if self.grapple_controller.is_initialised():
-                    soft_dock_complete = self.grapple_controller.soft_dock()
-                    
-                    # Exit conditions:
-                    if soft_dock_complete:
-                        self.GRASP_mode = GRASPMode.HARD_DOCK
-                        self.get_logger().info('Changed GRASP mode to HARD_DOCK.')
-                    
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.grapple_controller.soft_dock()
+                
+                # --- Override/Emergency Exit Conditions (before completion) ---
                 if self.GRASP_command == GRASPCommand.CLEARANCE:
                     self.GRASP_mode = GRASPMode.CLEARANCE
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to CLEARANCE.')
+                    return
+                
+                # --- Completion-based Transitions ---
+                if action_complete:
+                    self.GRASP_mode = GRASPMode.HARD_DOCK
+                    self.get_logger().info('Changed GRASP mode to HARD_DOCK.')
+                    return
                 
             case GRASPMode.HARD_DOCK:
                 """
@@ -1135,26 +1158,39 @@ class GRASPNode(Node):
                 3) AVC_A_POS1 command received -> Transitions to AVC_A_POS1 mode
                 4) AVC_B_POS1 command received -> Transitions to AVC_B_POS1 mode
                 """
-                # Entry actions: Call grapple controller's hard_dock method
-                if self.grapple_controller.is_initialised():
-                    self.grapple_controller.hard_dock()
-
-                # Exit conditions
-                grapple_state = self.grapple_controller.get_state()
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.grapple_controller.hard_dock()
+                
+                # --- Override/Emergency Exit Conditions (before completion) ---
                 if self.GRASP_command == GRASPCommand.CLEARANCE:
                     self.GRASP_mode = GRASPMode.CLEARANCE
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to CLEARANCE.')
-                elif self.GRASP_command == GRASPCommand.RELEASE:
+                    return
+                
+                # --- Completion-based Transitions ---
+                if not action_complete:
+                    return
+                
+                # --- Command-triggered Transitions (after completion) ---
+                if self.GRASP_command == GRASPCommand.RELEASE:
                     self.GRASP_mode = GRASPMode.RELEASE
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to RELEASE.')
-                elif self.GRASP_command == GRASPCommand.AVC_A_POS1 and grapple_state == GrappleState.HARD_DOCK:
+                    return
+                    
+                if self.GRASP_command == GRASPCommand.AVC_A_POS1:
                     self.GRASP_mode = GRASPMode.AVC_A_POS1
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to AVC_A_POS1.')
-                elif self.GRASP_command == GRASPCommand.AVC_B_POS1 and grapple_state == GrappleState.HARD_DOCK:
+                    return
+                    
+                if self.GRASP_command == GRASPCommand.AVC_B_POS1:
                     self.GRASP_mode = GRASPMode.AVC_B_POS1
+                    self.GRASP_command = GRASPCommand.NONE
                     self.get_logger().info('Changed GRASP mode to AVC_B_POS1.')
-                    
-                    
+                    return
+            
             case GRASPMode.CLEARANCE:
                 """
                 CLEARANCE mode. (Not currently implemented)
@@ -1162,71 +1198,7 @@ class GRASPNode(Node):
                 STOP
                 """
                 pass
-            
-            case GRASPMode.AVC_A_POS1:
-                """
-                AVC_A_POS1 mode. (Not currently implemented)
-                Entry: move AVC A mechanism to AVC_A_POS1 state
-                Exit: 
-                AVC_A_POS2 command received -> Transitions to AVC_A_POS2 mode
-                """
-                pass
-            case GRASPMode.AVC_A_POS1p5:
-                """
-                AVC_A_POS1p5 mode. (Not currently implemented)
-                Entry: move AVC A mechanism to AVC_A_POS1p5 state
-                Exit:
-                AVC_A_RETRACT command received -> Transitions to AVC_A_RETRACT mode
-                """
-                pass
-            case GRASPMode.AVC_A_POS2:
-                """
-                AVC_A_POS2 mode. (Not currently implemented)
-                Entry: move AVC A mechanism to AVC_A_POS2 state
-                Exit:
-                AVC_A_POS1p5 command received -> Transitions to AVC_A_POS1p5 mode
-                """
-                pass
-            case GRASPMode.AVC_A_RETRACT:
-                """
-                AVC_A_RETRACT mode. (Not currently implemented)
-                Entry: move AVC A mechanism to HOME state
-                Exit:
-                AVC A mechanism reaches HOME state -> Transitions to HARD_DOCK mode
-                """
-                pass
-            case GRASPMode.AVC_B_POS1:
-                """
-                AVC_B_POS1 mode. (Not currently implemented)
-                Entry: move AVC B mechanism to AVC_B_POS1 state
-                Exit: 
-                AVC_B_POS2 command received -> Transitions to AVC_B_POS2 mode
-                """
-                pass
-            case GRASPMode.AVC_B_POS1p5:
-                """
-                AVC_B_POS1p5 mode. (Not currently implemented)
-                Entry: move AVC B mechanism to AVC_B_POS1p5 state
-                Exit:
-                AVC_B_RETRACT command received -> Transitions to AVC_B_RETRACT mode
-                """
-                pass
-            case GRASPMode.AVC_B_POS2:
-                """
-                AVC_B_POS2 mode. (Not currently implemented)
-                Entry: move AVC B mechanism to AVC_B_POS2 state
-                Exit:
-                AVC_B_POS1p5 command received -> Transitions to AVC_B_POS1p5 mode
-                """
-                pass
-            case GRASPMode.AVC_B_RETRACT:
-                """
-                AVC_B_RETRACT mode. (Not currently implemented)
-                Entry: move AVC B mechanism to HOME state
-                Exit:
-                AVC B mechanism reaches HOME state -> Transitions to HARD_DOCK mode
-                """
-                pass
+                
             case GRASPMode.RELEASE:
                 """
                 RELEASE mode.
@@ -1235,22 +1207,106 @@ class GRASPNode(Node):
                 GRAPPLE mechanism reaches CLEARANCE state
                 STOP
                 """
-                # Entry actions: Call grapple controller's clearance method
-                if self.grapple_controller.is_initialised():
-                    self.grapple_controller.clearance()
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.grapple_controller.clearance()
                 
-                # Exit conditions
-                # (Stays in this mode once clearance is reached)
-                            
+                # --- Completion-based Transitions ---
+                if action_complete:
+                    # Stays in this mode once clearance is reached
+                    return
+            
+            case GRASPMode.AVC_A_POS1:
+                """
+                AVC_A_POS1 mode. (Not currently implemented)
+                Entry: move AVC A mechanism to AVC_A_POS1 state
+                Exit: 
+                AVC_A_POS2 command received -> Transitions to AVC_A_POS2 mode
+                """
+                # TODO: Implement AVC_A_POS1 actions
+                pass
+                
+            case GRASPMode.AVC_A_POS1p5:
+                """
+                AVC_A_POS1p5 mode. (Not currently implemented)
+                Entry: move AVC A mechanism to AVC_A_POS1p5 state
+                Exit:
+                AVC_A_RETRACT command received -> Transitions to AVC_A_RETRACT mode
+                """
+                # TODO: Implement AVC_A_POS1p5 actions
+                pass
+                
+            case GRASPMode.AVC_A_POS2:
+                """
+                AVC_A_POS2 mode. (Not currently implemented)
+                Entry: move AVC A mechanism to AVC_A_POS2 state
+                Exit:
+                AVC_A_POS1p5 command received -> Transitions to AVC_A_POS1p5 mode
+                """
+                # TODO: Implement AVC_A_POS2 actions
+                pass
+                
+            case GRASPMode.AVC_A_RETRACT:
+                """
+                AVC_A_RETRACT mode. (Not currently implemented)
+                Entry: move AVC A mechanism to HOME state
+                Exit:
+                AVC A mechanism reaches HOME state -> Transitions to HARD_DOCK mode
+                """
+                # TODO: Implement AVC_A_RETRACT actions
+                pass
+                
+            case GRASPMode.AVC_B_POS1:
+                """
+                AVC_B_POS1 mode. (Not currently implemented)
+                Entry: move AVC B mechanism to AVC_B_POS1 state
+                Exit: 
+                AVC_B_POS2 command received -> Transitions to AVC_B_POS2 mode
+                """
+                # TODO: Implement AVC_B_POS1 actions
+                pass
+                
+            case GRASPMode.AVC_B_POS1p5:
+                """
+                AVC_B_POS1p5 mode. (Not currently implemented)
+                Entry: move AVC B mechanism to AVC_B_POS1p5 state
+                Exit:
+                AVC_B_RETRACT command received -> Transitions to AVC_B_RETRACT mode
+                """
+                # TODO: Implement AVC_B_POS1p5 actions
+                pass
+                
+            case GRASPMode.AVC_B_POS2:
+                """
+                AVC_B_POS2 mode. (Not currently implemented)
+                Entry: move AVC B mechanism to AVC_B_POS2 state
+                Exit:
+                AVC_B_POS1p5 command received -> Transitions to AVC_B_POS1p5 mode
+                """
+                # TODO: Implement AVC_B_POS2 actions
+                pass
+                
+            case GRASPMode.AVC_B_RETRACT:
+                """
+                AVC_B_RETRACT mode. (Not currently implemented)
+                Entry: move AVC B mechanism to HOME state
+                Exit:
+                AVC B mechanism reaches HOME state -> Transitions to HARD_DOCK mode
+                """
+                # TODO: Implement AVC_B_RETRACT actions
+                pass
+            
             case GRASPMode.HEATER_ON:
                 """
                 HEATER_ON mode. Not currently implemented.
                 """
+                # TODO: Implement heater control
                 pass
+                
             case GRASPMode.HEATER_OFF:
                 """
                 HEATER_OFF mode. Not currently implemented.
                 """
+                # TODO: Implement heater control
                 pass
             
             case _:
