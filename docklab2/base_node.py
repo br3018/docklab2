@@ -46,21 +46,27 @@ class BaseNode(Node):
               "ON":           Switch on air bearings
               "OFF":          Switch off air bearings
               "HOME":         Home GRAPPLE and AVC
-              "OPEN":         Extend end effectors of GRAPPLE mechanism
+              "FREE_FLIGHT":  Set GRAPPLE to free flight mode
+              "READY":        Set GRAPPLE to ready mode
+              "TRIGGER":      Trigger docking sequence
               "DOCK":         Run docking procedure, begin recording to a rosbag
-              "POS1":         Send AVC to POS1 for leak check
+              "CLEARANCE":    Move GRAPPLE to clearance position
+              "AVC_A_POS1":   Send AVC A to POS1 for leak check
+              "AVC_A_POS1p5": Send AVC A to POS1.5 for interstitial venting
+              "AVC_A_POS2":   Send AVC A to POS2 for fluid transfer
+              "AVC_A_RETRACT": Retract AVC A to home position
+              "AVC_B_POS1":   Send AVC B to POS1 for leak check
+              "AVC_B_POS1p5": Send AVC B to POS1.5 for interstitial venting
+              "AVC_B_POS2":   Send AVC B to POS2 for fluid transfer
+              "AVC_B_RETRACT": Retract AVC B to home position
               "FLOW_ON":      Open flow valve on ABP1
               "FLOW_OFF":     Close flow valve on ABP1
               "VENT_ON":      Open vent valve on ABP1
               "VENT_OFF":     Close vent valve on ABP1
-              "POS2":         Send AVC to POS2 for fluid transfer
-              "POS1.5":       Send AVC to POS1.5 for interstitial venting
-              "AVC_RETURN":   Send AVC back to home position
-                              (Must run HOME, POS1, HOME again for best accuracy)
               "UNDOCK":       Run undocking procedure, begin recording to a rosbag
+              "RELEASE":      Release GRAPPLE mechanism
               "RECORD":       Record all topics to a rosbag
-              "STOP":         Emergency stop for grapple motor
-              "AVC_UNSTUCKIFY": Unstuck the AVC mechanism
+              "RESET":        Reset GRASP to uncontrolled mode
               ''')
         user_input = input('Enter command: ')
         # Process user input
@@ -90,15 +96,33 @@ class BaseNode(Node):
             case 'HOME':
                 time.sleep(1) # Wait for serial connection to establish
                 msg = String()
-                msg.data = 'GO_HOME'
+                msg.data = 'HOME'
                 self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(10)
-            case 'OPEN':
-                time.sleep(1) # Wait for serial connection to establish
+            case 'FREE_FLIGHT':
+                time.sleep(1)
                 msg = String()
-                msg.data = 'GO_OPEN'
+                msg.data = 'FREE_FLIGHT'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(2)
+            case 'READY':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'READY'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(2)
+            case 'TRIGGER':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'TRIGGER'
                 self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(50)
+            case 'CLEARANCE':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'CLEARANCE'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(10)
             case 'DOCK':
                 # Start recording to rosbag "docking" + date and time in YYYYMMDDHHMMSS format
                 filename = ' docking_' + time.strftime('%Y%m%d%H%M%S')
@@ -116,7 +140,7 @@ class BaseNode(Node):
                 self.abp1_airb_req.data = True
                 self.abp1_airb_cli_.call_async(self.abp1_airb_req)
                 # Start GRASP
-                self.abp1_GRASP_pub_.publish(String(data='GO_DOCK'))
+                self.abp1_GRASP_pub_.publish(String(data='TRIGGER'))
                 # Delay whilst docking procedure runs
                 time.sleep(60)
                 # Stop air bearings
@@ -127,28 +151,52 @@ class BaseNode(Node):
                 # Send Ctrl+C to the subprocess to terminate it gracefully
                 self.bagprocess.send_signal(subprocess.signal.SIGINT)
                 self.bagprocess.wait()
-            case 'POS1':
+            case 'AVC_A_POS1':
                 time.sleep(1) # Wait for serial communication to establish
                 msg = String()
-                msg.data = 'GO_POS1'
+                msg.data = 'AVC_A_POS1'
                 self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(10)
-            case 'POS2':
+            case 'AVC_A_POS2':
                 time.sleep(1) # Wait for serial communication to establish
                 msg = String()
-                msg.data = 'GO_POS2'
+                msg.data = 'AVC_A_POS2'
                 self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(10)
-            case 'POS1.5':
+            case 'AVC_A_POS1p5':
                 time.sleep(1)
                 msg = String()
-                msg.data = 'GO_POS1.5'
+                msg.data = 'AVC_A_POS1p5'
                 self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(10)
-            case 'AVC_RETURN':
+            case 'AVC_A_RETRACT':
                 time.sleep(1)
                 msg = String()
-                msg.data = 'AVC_RETURN'
+                msg.data = 'AVC_A_RETRACT'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(10)
+            case 'AVC_B_POS1':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'AVC_B_POS1'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(10)
+            case 'AVC_B_POS2':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'AVC_B_POS2'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(10)
+            case 'AVC_B_POS1p5':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'AVC_B_POS1p5'
+                self.abp1_GRASP_pub_.publish(msg)
+                time.sleep(10)
+            case 'AVC_B_RETRACT':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'AVC_B_RETRACT'
                 self.abp1_GRASP_pub_.publish(msg)
                 time.sleep(10)
             case 'UNDOCK':
@@ -164,8 +212,8 @@ class BaseNode(Node):
                 self.abp2_airb_cli_.call_async(self.abp2_airb_req)
                 self.abp1_airb_req.data = True
                 self.abp1_airb_cli_.call_async(self.abp1_airb_req)
-                # Start GRASP
-                self.abp1_GRASP_pub_.publish(String(data='GO_RELEASE'))
+                # Start GRASP release sequence
+                self.abp1_GRASP_pub_.publish(String(data='RELEASE'))
                 # Delay whilst undocking procedure runs
                 time.sleep(60)
                 # Stop air bearings
@@ -176,6 +224,14 @@ class BaseNode(Node):
                 # Send Ctrl+C to the subprocess to terminate it gracefully
                 self.bagprocess.send_signal(subprocess.signal.SIGINT)
                 self.bagprocess.wait()
+
+            case 'RELEASE':
+                time.sleep(1)
+                msg = String()
+                msg.data = 'RELEASE'
+                self.abp1_GRASP_pub_.publish(msg)
+                print('RELEASE command sent to GRASP')
+                time.sleep(10)
 
             case 'RECORD':
                 # Start recording to rosbag "recording" + date and time in YYYYMMDDHHMMSS format
@@ -193,19 +249,12 @@ class BaseNode(Node):
                 self.bagprocess.send_signal(subprocess.signal.SIGINT)
                 self.bagprocess.wait()
 
-            case 'STOP':
-                time.sleep(1) # Wait for serial communication to establish
+            case 'RESET':
+                time.sleep(1)
                 msg = String()
-                msg.data = 'STOP'
+                msg.data = 'RESET'
                 self.abp1_GRASP_pub_.publish(msg)
-                print('Emergency stop command sent to grapple motor')
-                
-            case 'AVC_UNSTUCKIFY':
-                time.sleep(1) # Wait for serial communication to establish
-                msg = String()
-                msg.data = 'AVC_UNSTUCKIFY'
-                self.abp1_GRASP_pub_.publish(msg)
-                print('AVC unstuckify command sent')
+                print('RESET command sent to GRASP - now in UNCONTROLLED mode')
 
             case default:
                 print('Invalid command')

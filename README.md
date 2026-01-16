@@ -1,6 +1,9 @@
 # docklab2
 Code for running Docklab 2 at OFL
 
+## GRASP software setup
+Install GraspPy module following instructions in git repo: https://github.com/OFI-UK/GraspPy
+
 ## Setup instructions for air bearing platforms: 
  - Use Raspberry Pi imager to install Ubuntu desktop 24.04.01 LTS (64 bit) for ROS 2 Jazzy or Ubuntu 22.04.5 LTS (64 bit) for ROS 2 Humble
  - Set hostname "abpX" (where X is a unique identifier below) for air bearing platforms. Use "base" for the hub and "ejection" for the ejection mechanism
@@ -76,8 +79,8 @@ sudo adduser "${USER}" dialout
 sudo reboot
 
 # Solo Motor Controller Setup 
- - Install SoloPy here: https://github.com/Solo-FL/SoloPy.git
- - AVC device address: 3
+ - AVC A device address: 3
+ - AVC B device address: 4
  - Grapple device address: 7
 
 # LabJack Setup Instructions
@@ -151,7 +154,7 @@ ros2 lifecycle set /mocap4r2_optitrack_driver_node activate
 
 # ABPX:
 Nodes: 
-GRASP_node - node for communicating with GRASP MDE and updating GRASP state
+GRASP_node - GRASP state machine
 labjack_node - node for communicating with LabJack devices for datalogging
 base_node - node for controlling docklab 2
 relay_server3 - server for services for changing state of relays on RPi Relay Board with 3 relays (https://thepihut.com/products/raspberry-pi-relay-board)
