@@ -2,6 +2,7 @@
 
   ros__parameters:
 
+    # Valid options for grasp_model: 'EM3', 'EM4', 'QM' 
     grasp_model: 'EM3' # GRASP model
 
     feedback_params:
