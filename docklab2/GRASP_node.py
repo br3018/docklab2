@@ -571,8 +571,29 @@ class GRASPNode(Node):
                 Exit: 
                 AVC_A_POS2 command received -> Transitions to AVC_A_POS2 mode
                 """
-                # TODO: Implement AVC_A_POS1 actions
-                pass
+                # --- Entry/Ongoing Actions ---
+                action_complete = self.avc_a_controller.pos1()
+                
+                # --- Completion-based Transitions ---
+                if action_complete:
+                    # Stays in this mode once POS1 is reached
+                    return
+                
+                # --- Command-triggered Transitions ---
+                if self.GRASP_command == GRASPCommand.AVC_A_POS1p5:
+                    self.GRASP_mode = GRASPMode.AVC_A_POS1p5
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_POS1p5')
+                
+                if self.GRASP_command == GRASPCommand.AVC_A_POS2:
+                    self.GRASP_mode = GRASPMode.AVC_A_POS2
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_POS2')
+                    
+                if self.GRASP_command == GRASPCommand.AVC_A_RETRACT:
+                    self.GRASP_mode = GRASPMode.AVC_A_RETRACT
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_RETRACT')
                 
             case GRASPMode.AVC_A_POS1p5:
                 """
@@ -581,8 +602,24 @@ class GRASPNode(Node):
                 Exit:
                 AVC_A_RETRACT command received -> Transitions to AVC_A_RETRACT mode
                 """
-                # TODO: Implement AVC_A_POS1p5 actions
-                pass
+                # --- Entry/Ongoing Actions
+                action_complete = self.avc_a_controller.pos1p5()
+                
+                # --- Completion-based Transitions
+                if action_complete:
+                    # Stays in this mode once POS1p5 is reached
+                    return
+                
+                # --- Command-triggered Transitions                
+                if self.GRASP_command == GRASPCommand.AVC_A_POS2:
+                    self.GRASP_mode = GRASPMode.AVC_A_POS2
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_POS2')
+                    
+                if self.GRASP_command == GRASPCommand.AVC_A_RETRACT:
+                    self.GRASP_mode = GRASPMode.AVC_A_RETRACT
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_RETRACT')
                 
             case GRASPMode.AVC_A_POS2:
                 """
@@ -591,8 +628,24 @@ class GRASPNode(Node):
                 Exit:
                 AVC_A_POS1p5 command received -> Transitions to AVC_A_POS1p5 mode
                 """
-                # TODO: Implement AVC_A_POS2 actions
-                pass
+                # --- Entry/Ongoing Actions
+                action_complete = self.avc_a_controller.pos2()
+                
+                # --- Completion-based Transitions
+                if action_complete:
+                    # Stays in this mode once POS2 is reached
+                    return
+                
+                # --- Command-triggered Transitions                
+                if self.GRASP_command == GRASPCommand.AVC_A_POS1p5:
+                    self.GRASP_mode = GRASPMode.AVC_A_POS1p5
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_POS1p5')
+                    
+                if self.GRASP_command == GRASPCommand.AVC_A_RETRACT:
+                    self.GRASP_mode = GRASPMode.AVC_A_RETRACT
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to AVC_A_RETRACT')
                 
             case GRASPMode.AVC_A_RETRACT:
                 """
@@ -601,8 +654,21 @@ class GRASPNode(Node):
                 Exit:
                 AVC A mechanism reaches HOME state -> Transitions to HARD_DOCK mode
                 """
-                # TODO: Implement AVC_A_RETRACT actions
-                pass
+                # --- Entry/Ongoing Actions
+                # TODO: Implement an actual retract function if we are not
+                # TODO: happy with re-homing again to avoid high stiction.
+                action_complete = self.avc_a_controller.home()
+                
+                # --- Completion-based Transitions
+                if action_complete:
+                    # Stays in this mode once RETRACT-ed *wink* *wink*
+                    return
+                
+                # --- Command-triggered Transitions
+                if self.GRASP_command == GRASPCommand.RELEASE:
+                    self.GRASP_mode = GRASPMode.RELEASE
+                    self.GRASP_command = GRASPCommand.NONE
+                    self.get_logger().info('Changed GRASP mode to RELEASE')
                 
             case GRASPMode.AVC_B_POS1:
                 """
