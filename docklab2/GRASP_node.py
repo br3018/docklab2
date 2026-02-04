@@ -566,7 +566,7 @@ class GRASPNode(Node):
             
             case GRASPMode.AVC_A_POS1:
                 """
-                AVC_A_POS1 mode. (Not currently implemented)
+                AVC_A_POS1 mode. 
                 Entry: move AVC A mechanism to AVC_A_POS1 state
                 Exit: 
                 AVC_A_POS2 command received -> Transitions to AVC_A_POS2 mode
@@ -575,8 +575,8 @@ class GRASPNode(Node):
                 action_complete = self.avc_a_controller.pos1()
                 
                 # --- Completion-based Transitions ---
-                if action_complete:
-                    # Stays in this mode once POS1 is reached
+                if not action_complete:
+                    # Stays in this mode until POS1 is reached
                     return
                 
                 # --- Command-triggered Transitions ---
@@ -606,8 +606,8 @@ class GRASPNode(Node):
                 action_complete = self.avc_a_controller.pos1p5()
                 
                 # --- Completion-based Transitions
-                if action_complete:
-                    # Stays in this mode once POS1p5 is reached
+                if not action_complete:
+                    # Stays in this mode until POS1p5 is reached
                     return
                 
                 # --- Command-triggered Transitions                
@@ -632,8 +632,8 @@ class GRASPNode(Node):
                 action_complete = self.avc_a_controller.pos2()
                 
                 # --- Completion-based Transitions
-                if action_complete:
-                    # Stays in this mode once POS2 is reached
+                if not action_complete:
+                    # Stays in this mode until POS2 is reached
                     return
                 
                 # --- Command-triggered Transitions                
@@ -660,8 +660,8 @@ class GRASPNode(Node):
                 action_complete = self.avc_a_controller.home()
                 
                 # --- Completion-based Transitions
-                if action_complete:
-                    # Stays in this mode once RETRACT-ed *wink* *wink*
+                if not action_complete:
+                    # Stays in this mode until RETRACT-ed *wink* *wink*
                     return
                 
                 # --- Command-triggered Transitions
