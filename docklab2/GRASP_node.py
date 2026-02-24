@@ -6,6 +6,7 @@
 # ROS2 Python Client Libraries 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy 
 
 # Service type 
 from std_srvs.srv import Trigger
@@ -27,7 +28,7 @@ from datetime import datetime
 
 # Logger
 print(solo.__file__)
-grapple_logger_level = 1
+grapple_logger_level = 0
 
 # Search for available serial devices. 
 print('Running a search for available serial devices')
@@ -55,7 +56,7 @@ class GRASPNode(Node):
     def __init__(self):
 
         super().__init__('GRASP_node')
-        
+        print("Hello Dave")
         self.get_logger().info('Initialising GRASP')
 
         # Initiate GRAPPLE motor driver
@@ -65,7 +66,14 @@ class GRASPNode(Node):
         self.timer = self.create_timer(0.1, self.GRASP_state_machine)
         
         # Add GRASP state subscribers
-        self.subscription = self.create_subscription(String, 'GRASP_flags',                self.GRASP_external_flags, 10) #QoS arbitrarily set at 10
+
+        qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE 
+        )
+        self.subscription = self.create_subscription(String, 'GRASP_flags',                self.GRASP_external_flags, qos) #QoS arbitrarily set at 10
         self.subscription = self.create_subscription(Float64,'grapple_motor/position_cmd', self.grapple_motor_position_control,10)
         self.subscription = self.create_subscription(Float64,'grapple_motor/velocity_cmd', self.grapple_motor_speed_control,10)
         self.subscription = self.create_subscription(Float64,'grapple_motor/torque_cmd',   self.grapple_motor_torque_control,10)
@@ -206,7 +214,10 @@ class GRASPNode(Node):
         This means that this code does not run in a loop. It's only triggered with the flags, like an interruption. 
         We will first match the received flag and then perform the associated actions.
         '''
-        flag = msg.data   
+        flag = msg.data  
+
+        print("I got: ", flag) 
+        # return
         match flag:
             # GRAPPLE related flags
             case 'GO_HOME':
@@ -226,27 +237,27 @@ class GRASPNode(Node):
                 self.gra_motor_control_mode = "POSITION"
                 self.target_pos = -41500
                 self.grapple_Solo.set_position_reference(self.target_pos)
-                self.grapple_state = 'OPEN'
+                self.grapple_state = 'OPENING'
 
             case 'GO_SD':
-                self.get_logger().info('Received command to go to soft dock position')
+                self.get_logger().info('Received command to go to soft dock.')
                 self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
                 self.gra_motor_control_mode = 'POSITION'
-                self.target_pos = -39500
+                self.target_pos = -39450
                 self.grapple_Solo.set_position_reference(self.target_pos)
-                self.grapple_state = 'SOFTDOCK'
+                self.grapple_state = 'SOFTDOCKING'
 
             case 'GO_HD':
-                self.get_logger().info('Received command to go to hard dock')
+                self.get_logger().info('Received command to go to hard dock.')
                 self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
                 self.gra_motor_control_mode = 'TORQUE'
                 self.grapple_Solo.set_motor_direction(solo.Direction.COUNTERCLOCKWISE)
                 torque_ref = 2
                 self.grapple_Solo.set_torque_reference_iq(torque_ref)
-                self.grapple_state = 'HARDDOCK'
+                self.grapple_state = 'HARDDOCKING'
 
             case 'GO_CAPTURE':
-                self.get_logger().info('Received command to capture RAFTI.')
+                self.get_logger().info('Received command to perform a full dock.')
                 self.grapple_Solo.set_speed_acceleration_value(100)
                 self.grapple_Solo.set_speed_deceleration_value(100)
                 self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE) 
@@ -257,7 +268,7 @@ class GRASPNode(Node):
                 self.grapple_state = 'CAPTURING'
 
             case 'GO_RELEASE':
-                self.get_logger().info('Received command to release RAFTI.')
+                self.get_logger().info('Received command to release.')
                 self.grapple_Solo.set_speed_limit(4750)
                 self.grapple_Solo.set_speed_acceleration_value(10)
                 self.grapple_Solo.set_speed_deceleration_value(10)
@@ -265,7 +276,7 @@ class GRASPNode(Node):
                 self.gra_motor_control_mode = "POSITION"
                 self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
                 self.grapple_Solo.set_position_reference(self.target_pos)
-                self.grapple_state = 'RELEASE'
+                self.grapple_state = 'RELEASING'
 
             case 'STOP':
                 control_mode, error = self.grapple_Solo.get_control_mode()
@@ -273,13 +284,12 @@ class GRASPNode(Node):
                     self.grapple_Solo.set_control_mode(solo.ControlMode.SPEED_MODE)
                     self.gra_motor_control_mode = "SPEED"
                     self.grapple_Solo.set_speed_reference(0)
-                    self.get_logger().warning('')
-                    print('Asked the motor to STOP by setting SPEED to zero.')
+                    self.get_logger().warning('Received command to STOP. Setting motor speed to zero.')
                     self.grapple_state = 'IDLE'
-                else control_mode == solo.ControlMode.TORQUE_MODE:
+                elif control_mode == solo.ControlMode.TORQUE_MODE:
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
                     self.gra_motor_control_mode = "TORQUE"
-                    self.get_logger().info(f"TORQUE MODE: Commanding the motor to stop by setting TORQUE to zero.")
+                    self.get_logger().info('Received command to STOP. Setting motor current to zero.')
                     self.grapple_Solo.set_torque_reference_iq(0)
                 self.grapple_state = 'IDLE'
 
@@ -289,6 +299,9 @@ class GRASPNode(Node):
                 self.grapple_Solo.reset_position_to_zero()
                 self.grapple_Solo.set_position_reference(0)
                 self.grapple_state = 'IDLE'
+
+            case _:
+                print(f"{flag} is not valid command...")
 
                 
     # STATE MACHINE CODE
@@ -308,8 +321,8 @@ class GRASPNode(Node):
             case "HOMING":
                 current_threshold = 2
                 if abs(self.gra_motor_current) > current_threshold:
-                    self.get_logger().info('Current threshold for GRAPPLE homing reached.')
-                    self.get_logger().info('Stopping motor by setting torque reference current to 0.')
+                    self.get_logger().info('Reached current threshold for GRAPPLE homing.')
+                    self.get_logger().info('Stopping motor by setting motor current to 0.')
                     self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
                     self.gra_motor_control_mode = "TORQUE"
                     self.grapple_Solo.set_torque_reference_iq(0)
@@ -325,19 +338,42 @@ class GRASPNode(Node):
 
             case "HOME":
                 pass
+            
+            case "OPENING":
+                if abs(self.gra_motor_pos) > 41495:
+                    self.get_logger().info('GRAPPLE mechanism reached OPEN state.')
+                    self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
+                    self.grapple_Solo.set_torque_reference_iq(0)
+                    self.grapple_state = 'OPEN'
 
             case "OPEN":
                 pass
 
-            case "SOFTDOCK":
+            case "SOFTDOCKING":
                 # Quick and dirty code to detect if something is going wrong in the soft docking procedure.
                 current_threshold = 1.0
                 if abs(self.gra_motor_current) > current_threshold:
                     self.get_logger().warning('Current threshold for SOFTDOCK exceeded. Back to OPEN and stopping motor.')
                     self.grapple_Solo.set_control_mode(solo.ControlMode.POSITION_MODE)
                     self.grapple_Solo.set_position_reference(-41500)
+                    self.grapple_state = 'OPENING'
+                if abs(self.gra_motor_pos) <= 39500:
+                    self.get_logger().info('Reached SOFTDOCK position.')
+                    self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
+                    self.grapple_Solo.set_torque_reference_iq(0)
+                    self.grapple_state = 'SOFTDOCKED'
+            
+            case "SOFTDOCKED":
+                pass
 
-            case "HARDDOCK":
+            case "HARDDOCKING":
+                if abs(self.gra_motor_speed) == 0:
+                    self.get_logger().info('Velocity threshold for HARDDOCK reached. Stopping motor.')
+                    self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
+                    self.grapple_Solo.set_torque_reference_iq(0)
+                    self.grapple_state = 'HARDDOCKED'
+            
+            case "HARDDOCKED":
                 pass
 
             case "CAPTURING":
@@ -367,16 +403,24 @@ class GRASPNode(Node):
                     self.gra_motor_speed, error   = self.grapple_Solo.get_speed_feedback()
                     self.gra_motor_current, error = self.grapple_Solo.get_quadrature_current_iq_feedback()
                     
-                    self.grapple_state = 'HARD_DOCK'
+                    self.grapple_state = 'HARDDOCKED'
 
-            case "HARD_DOCK":
+            case "HARDDOCKED":
                 pass
                 
-            case "RELEASE":
-                self.get_logger().info('Updating GRASP state to RELEASE')
+            case "RELEASING":
+                if abs(self.gra_motor_pos) > 41495:
+                    self.get_logger().info('GRAPPLE mechanism reached RELEASED state.')
+                    self.grapple_Solo.set_control_mode(solo.ControlMode.TORQUE_MODE)
+                    self.grapple_Solo.set_torque_reference_iq(0)
+                    self.grapple_state = 'RELEASED'
+            
+            case "RELEASED":
+                pass
                 
             case _:
                 self.get_logger().error('Unidentified GRASP state request. Ignoring command.')
+                self.grapple_state = 'IDLE'
         
         self.publish_data()
 
